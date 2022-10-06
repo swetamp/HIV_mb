@@ -8,6 +8,7 @@
 #Updated June 9, 2022 by Sweta Patel to incorporate age into all compositional analyses
 #Updated Aug 3, 2022 by Sweta Patel to update figures and analyses after MK manuscript revision #1
 #Updated Aug 28, 2022 by Sweta Patel to update figures and analysis after MK manuscript revision #2
+#Updated Oct 6, 2022 by Sweta Patel to incorporate co-author feedback
 
 #***GENERAL ORDER OF STEPS***
 #1. Clean up taxtable (+ ID all corynebacterium spp and other common sp) and agglomerate at species level
@@ -18,7 +19,6 @@
 #6. Alpha diversity analyses
 #7. Transform data (CLR) and do Beta-diversity analyses (PCoA plots, PERMANOVA)
   #UPDATE 5/5: the order covariables are listed in PERMANOVA affects the results
-    #blocking factors/strata? (need to read more about to inform analysis)
 #8. Generate relative abundance plots using NON-transformed data
 #9. UPDATE 5/21: Filter on mean relative abundance of 50 and remove NOS species
 #10. Differential abundance analyses using Maaslin and FILTERED data
@@ -412,12 +412,6 @@ meta_prune <- within(meta_prune, rm(samp_storage, enr_clinic, enr_clinic_other, 
 
 remove(meta_new, test)
 
-##################
-#RAREFACTION CURVE
-##################
-
-#skip for now pending d/w MK; if need sample code: lines 328-438 in mom 3-1-21.R file
-
 #############################################
 #DEMOGRAPHICS OF PARTICIPANTS WITH SEQUENCING
 #############################################
@@ -463,10 +457,6 @@ table(child$mat_educ2, child$hiv)
 prop.table(table(child$mat_educ2, child$hiv), 2)
 summary(table(child$mat_educ2, child$hiv))
 fisher.test(child$mat_educ2, child$hiv)
-
-#Location of residence [SKIPPED KAIJU]
-  #Is this worth stratifying? Where do these children live?
-table(child$residence)  # __ in gaborone, __ in mogoditshane --> **/152 children live in these 2 places
 
 #Electricity
 table(child$elec) #106 children have electricity
@@ -629,28 +619,6 @@ table(chi_hiv$child_arv_meds)
 ################################################
 #NUMBER OF READS BY SUBJECT CLASS AND HIV STATUS
 ################################################
-###NONPRUNED###
-#NOTE: this df contains 306 samples
-summary(metanew$paired.reads)   #Median (IQR) of 59,992 (19,388; 198,647) reads per sample
-  #mean 183,726 reads per sample
-hist(metanew$paired.reads)
-
-#Did maternal samples contain more reads than child or sib reads? --> the opposite! Why?
-  #children = petri dishes
-tapply(metanew$paired.reads, metanew$subject, summary)
-kruskal.test(metanew$paired.reads, metanew$subject)
-
-tapply(child$paired.reads, child$hiv, summary)
-kruskal.test(paired.reads ~ hiv, data = child) 
-
-#Sum of sequences prior to filtering out singletons
-sum(sample_sums(meta_new))     #35,135,695 sequences obtained 
-mean(sample_sums(meta_new))    #Mean of 114,822.5 sequences per sample
-median(sample_sums(meta_new))  #Median of 32,666 sequences per sample
-summary(sample_sums(meta_new)) #IQR of sequencing reads per sample: 8457, 137502
-nsamples(meta_new)             #306 NP samples 
-ntaxa(meta_new) #7998 taxa BEFORE CLEANING
-
 ###PRUNED and agglomerated###
 summary(meta_prune$paired.reads)   #Median (IQR) of 73,166 (29,605; 217,115) reads per sample
 #mean 183,726 reads per sample
@@ -667,13 +635,13 @@ summary(child$paired.reads)
 tapply(child$paired.reads, child$hiv, summary)
 kruskal.test(paired.reads ~ hiv, data = child) 
 
-#Sum of sequences prior to filtering out singletons (NOT UPDATED AS OF MAY 2022)
-sum(sample_sums(meta_prune))     #35,135,695 sequences obtained 
-mean(sample_sums(meta_prune))    #Mean of 114,822.5 sequences per sample
-median(sample_sums(meta_prune))  #Median of 32,666 sequences per sample
-summary(sample_sums(meta_prune)) #IQR of sequencing reads per sample: 8457, 137502
-nsamples(meta_meta_prune)        #306 NP samples 
-ntaxa(meta_prune) #7998 taxa BEFORE CLEANING
+#Sum of sequences prior to filtering out singletons
+sum(sample_sums(pruned))     #35,101,748 sequences obtained 
+mean(sample_sums(pruned))    #Mean of 129,050.5 sequences per sample
+median(sample_sums(pruned))  #Median of 45,235 sequences per sample
+summary(sample_sums(pruned)) #IQR of sequencing reads per sample: 15730, 146428
+nsamples(pruned)        #272 NP samples 
+ntaxa(pruned) #6709 taxa
 
 ################
 #ALPHA DIVERSITY
