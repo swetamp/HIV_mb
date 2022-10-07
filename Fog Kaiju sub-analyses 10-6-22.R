@@ -1,6 +1,7 @@
 #Impact of HIV infection or exposure on the nasopharyngeal microbiome of children in Botswana
 #Sub-analysis with Kaiju output
 #Compiled May 26, 2022 by Sweta Patel
+#Updated Oct 6, 2022 by Sweta Patel
 
 #***GENERAL ORDER OF STEPS***
 #Within HIV+ kids: compare virally suppressed to not, immune suppressed to not
@@ -13,10 +14,12 @@
 #5. UPDATE JULY 2022: compare immune competent HEI to HEU, HUU (composition, KW on 10 most abundant species)
 #6. UPDATE AUG 2022: compare immune compromised HEI to HEU, HUU (composition, KW on 10 most abundant species)
 #7. UPDATE SEPT 2022: see if possible to run negative binomial models to see if TMP-SMX, abx, vl, cd4 are associated with rel abundance of coryne, d pigrum, s. aureus
+#8. UPDATE OCT 2022: Lefse, updated figures
 
 #For HIV-HEU sibling pairs:
 #1. Compare overall composition using paired permanova (pairwise adonis)
 #2. Compare rel abundance of 10 most abundant species using paired Wilcoxon
+#3. UPDATE OCT 2022: supplemental barplot of most abundant species, Lefse
 
 #***LOADING PACKAGES***
 library(plyr)
@@ -36,6 +39,8 @@ library(readxl)
 library(microbiome)
 library(MASS)
 library(Maaslin2)
+library(cowplot)
+library(lefser)
 
 set.seed(1234)
 
@@ -1704,7 +1709,7 @@ fisher.test(sib3$dpt, sib3$subject) #P=1.0
   #paired
 wilcox.test(dpt ~ subject, data=sib3, paired=TRUE, exact=FALSE) #P=0.85
 
-sib_clr <- transform(sib_pair, "clr")
+sib_clr <- microbiome::transform(sib_pair, "clr")
 
 #PCoA plots#
 clr_pcoa <- ordinate(sib_clr, method = "PCoA", distance = "euclidean")
@@ -1763,63 +1768,18 @@ otu <- as.data.frame(otu_table(sib_clr, taxa_are_rows=TRUE))
 otu_trans <- data.frame(t(otu))
 BC.dist=vegdist(otu_trans, method="euclidean")
 
-#below options did not work, so trying different code
-  #source: https://rdrr.io/github/Jtrachsel/funfuns/man/pairwise.adonis.html
-#turn our dataset into a vector?
-#we need some way to differentiate the pairs so we end up with 9 tests
-  #did not work: using subject (1 test), study_id (tests all IDs against all other IDs), sample_id(error)
-#what if we make a new variable called pair? and assign values 1-9 and see if that works
-sib3$pair <- NA
-sib3$pair [sib3$study_id == "B.09"] <- 9
-sib3$pair [sib3$study_id == "B.16"] <- 16
-sib3$pair [sib3$study_id == "B.17"] <- 17
-sib3$pair [sib3$study_id == "B.20"] <- 20
-sib3$pair [sib3$study_id == "B.23"] <- 23
-sib3$pair [sib3$study_id == "B.25"] <- 25
-sib3$pair [sib3$study_id == "B.32"] <- 32
-sib3$pair [sib3$study_id == "B.35"] <- 35
-sib3$pair [sib3$study_id == "B.48"] <- 48
-
-
-test <- sib3[['pair']]
-pairwise.adonis(
-  otu_trans,
-  test,
-  sim.method = "euclidean",
-  p.adjust.m = "BH")
-
 #Source for pairwise adonis: https://github.com/pmartinezarbizu/pairwiseAdonis
 #let's give it a shot
 # library(devtools)
 # install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
 library(pairwiseAdonis)
-#pairwise adonis
-# pairwise.adonis(BC.dist ~ study_id, data = sib) #error message: unused arguments (data=sib)
-# pairwise.adonis(BC.dist, sib$subject) #1 result of child vs sib; not what we want
-# pairwise.adonis2(BC.dist, sib3$pair, strata = "study_id") 
-# pairwise.adonis2(BC.dist ~ subject, data = sib3, strata = 'pair')
 pairwise.adonis2(BC.dist ~ subject, data = sib3, strata = 'study_id')
 #adjust for FDR with BH method
 pairwise.adonis2(BC.dist ~ subject, data = sib3, strata = 'study_id', p.adjust.m = "BH")
-  #same result, no error message.
-  ###THIS CODE (ABOVE) WORKS
+  #same result, no error message
 adonis2(BC.dist ~ subject, data = sib3, permutations = 999) #no difference between children and siblings overall (NOT pairwise)
 
-# #try with strata
-# pairwise.adonis(BC.dist ~ subject, data = sib, strata = "study_id")
-# #not working
-# pairwise.adonis(BC.dist, sib$study_id)
-
-# #try different package
-# install.packages("remotes")
-# remotes::install_github("ECGen/ComGenR")  #can't get the library to load
-# pair.permanova(BC.dist, sib$study_id, nits = 999)
-# 
-# pairwiseAdonis::pairwise.adonis2(BC.dist ~ subject, data = sib, strata = "study_id", nperm = 999)
-# pairwiseAdonis::pairwise.adonis2(otu_trans, sib, sim.function = "vegdist", sim.method = "euclidean",
-#                                 p.adjust.m = "bonferroni", reduce = NULL, perm=999)
-
-#I'm hitting a dead end; skip for now and move on to comparing rel abundance of C.pseudo
+#NEXT: comparing rel abundance of C.pseudo
 sib.rel <- transform_sample_counts(sib_pair, function(Abundance) Abundance/sum(Abundance))
 sample_sums(sib.rel)  # This is a sanity check to make sure that relative abundance was calculated for each sample prior to pooling data
 #All samples add to 1
@@ -1888,12 +1848,21 @@ show_col(chisp2)
 #Creating relative abundance figure: siblings
 #CREATING RELATIVE ABUNDANCE PLOT
 #source for rotating x labels: https://stackoverflow.com/questions/1330989/rotating-and-spacing-axis-labels-in-ggplot2
+#Create new variable to update our figure legend to "CLWH" and "HEU siblings"
+relative_df$subj2 <- NA
+relative_df$subj2 [relative_df$subject == "child"] <- "CLWH"
+relative_df$subj2 [relative_df$subject == "sib"] <- "HEU siblings"
+table(relative_df$subj2)
+class(relative_df$subj2)
+relative_df$subj2 <- as.factor(relative_df$subj2)
+relative_df$subj2 <- reorder(relative_df$subj2, new.order=c("CLWH", "HEU siblings"))
+
 relative_df$subject_abundances <- (relative_df$Abundance)/(length(unique(relative_df$Sample))) 
 relative_df$Species <- factor(relative_df$Species)
 relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum",  
                                                                 "Haemophilus influenzae", "Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", 
                                                                 "Staphylococcus aureus", "Streptococcus mitis", "Streptococcus pneumoniae", "Other"))
-subject_plot2 <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=subject, y=subject_abundances, fill=Species)) + 
+subject_plot2 <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=subj2, y=subject_abundances, fill=Species)) + 
   geom_bar(stat="identity", position="fill") + theme_classic() + theme(legend.position="right", 
                                                                        legend.text=element_text(size=10, face="italic"),
                                                                        axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
@@ -1902,11 +1871,10 @@ subject_plot2 <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE
   # scale_x_discrete(labels=c("No", "Yes")) +
   xlab("Subject classification") + ylab("Mean relative abundance") 
 
-#element_text(size=12, margin=margin(10,0,0,0))
 
 sib2 <- plot(subject_plot2)
 
-png(file="sib_genplot_08302022.png",
+png(file="FigS2.png",
     width = 9, height = 5, units = 'in', res = 600)
 sib2
 dev.off()
