@@ -416,13 +416,7 @@ remove(meta_new, test)
 #DEMOGRAPHICS OF PARTICIPANTS WITH SEQUENCING
 #############################################
 #Thinking about Table 1: all HEU and HUU kids were age and sex matched
-#start with general demographics first
-
-# #NEW CODE 1/2/22: convert metanew into a dataframe
-# metanew <- data.frame(sample_data(meta_new))
-# child <- subset(metanew, subject == "child")
-
-#Redoing demo table for the 80th time using pruned group (n=272)
+#start with general demographics first using pruned group (n=272)
 child <- subset(meta_prune, subject == "child") #n=143
 table(child$hiv)  #50 HUU kids, 49 HEU kids, 44 HIV+ kids
 
@@ -1003,7 +997,7 @@ remove(div_age, div_mv, hiv.aov, m1, subj.aov)
   #Sources: https://rdrr.io/github/microbiome/microbiome/man/transform.html
     #https://microbiome.github.io/tutorials/Preprocessing.html
 
-pruned_clr <- transform(pruned, "clr")
+pruned_clr <- microbiome::transform(pruned, "clr")
 
 #####################
 #BETA DIVERSITY PLOTS

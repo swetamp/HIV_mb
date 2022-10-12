@@ -1953,6 +1953,61 @@ summary(spneum$Abundance)
 tapply(spneum$Abundance, spneum$subject, summary)
 wilcox.test(Abundance ~ subject, data=spneum, paired=TRUE) #P=0.02 (warning: cannot compute exact p-value with zeroes)
 
+###LEFSE (using lefser package)###
+#Tutorial: https://waldronlab.io/lefser/articles/lefser.html
+#SummarizedExperiment: https://bioconductor.org/help/course-materials/2019/BSS2019/04_Practical_CoreApproachesInBioconductor.html
+#converting pseq to SE (2.3.2): https://microbiome.github.io/OMA/data-introduction.html
+
+#will try using sib_pair pseq object; Coldata = subject
+  #can't use with pseq object or dataframe; must use with a SummarizedExperiment object
+#Creating SummarizedExperiment
+  #assay() -> can use our otu table with organisms as rows and samples as colums
+  #metadata() -> can use sib3 for our metadata
+library(mia)
+data("zeller14")
+sib_pair_TSE <- makeTreeSummarizedExperimentFromPhyloseq(sib_pair)
+
+library(lefser)
+test <- lefser(sib_pair_TSE, groupCol = "subject")
+head(test)
+lefserPlot(test)
+#we get results, but when we plot out there is only 1 group shown. does it have to do with our data structure?
+  #what if we make an updated pseq object that uses sib3 for the sample data, then convert to TSE and run lefser?
+sib_pair2 <- sib_pair
+row.names(sib3) <- sib3$sample_id
+sib3$X <- NULL
+sample_data(sib_pair2) <- as.data.frame(sib3)
+#now see if it worked:
+bloop <- data.frame(sample_data(sib_pair2))
+#success!
+remove(bloop)
+
+#now try TSE conversion + LEFSEr again:
+sib_pair_TSE <- makeTreeSummarizedExperimentFromPhyloseq(sib_pair2)
+test2 <- lefser(sib_pair_TSE, groupCol = "subject")
+head(test2)
+lefserPlot(test2) #no change, same results and still only 1 group is plotted out
+
+#is it because i only have one group condition and no subclass?
+table(sib3$subject, sib3$uri_rec2)
+table(sib3$subject)
+table(sib_pair_TSE$subject)
+table(sib_pair_TSE$subject, sib_pair_TSE$uri_rec2)
+test3 <- lefser(sib_pair_TSE, groupCol = "subject", blockCol = "uri_rec2")
+  #adding blockCol gives error: "Error in svd(X, nu = 0L) : a dimension is zero"
+  #https://forum.biobakery.org/t/lefse-error-error-in-svd-x-nu-0l-infinite-or-missing-values-in-x/3896
+    #missing or non-numeric data proposed as potential cause, but not applicable here
+    #compared zeller14 data structure and our sib_pair_TSE looks the same, so no clear issue there
+#reviewed with programming working group on 10/11/22; no clear error identified; may be that only 1 group is associated with differential abundance
+#ALSO: previously reported to developers on github --> impossible to tell who "group 1" is from the test alone
+  #ref: https://github.com/waldronlab/lefser/issues/15
+  #given our prior wilcoxon results, it is fair to assume that group 1 here in test2.df is siblings
+head(test3)
+lefserPlot(test2)
+
+#given above issues, will save test2 as a csv file, and then import it to create a bar plot like we did for the Maaslin results
+write.csv(test2, 'lefse_sibpair.csv')
+
 ##############################################
 #ANALYSIS REMOVING HEI CHILDREN WITH CD4 < 25%
 ##############################################
