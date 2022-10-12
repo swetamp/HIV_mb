@@ -570,7 +570,7 @@ hiv_labs <- data.frame(sample_data(labs))
 
 #Now transform our pseq objects
 vl_clr <- transform(vl, "clr")
-cd4_clr <- transform(cd4, "clr")
+cd4_clr <- microbiome::transform(cd4, "clr")
 hiv_clr <- transform(hiv, "clr")
 
 #PCoA plots#
@@ -781,9 +781,6 @@ species_df$Species <- factor(species_df$Species, levels = species_df$Species[ord
 
 # Rename species other than top10 as "Other" in creating dataframe relative_df
 relative_df <- merge(melted_df, abundances, by=c("Genus", "Species"))
-#keep getting vector memory exhausted error; need to reboot R so will save melted_df and abundances as csv files
-#source for fix: https://stackoverflow.com/questions/51295402/r-on-macos-error-vector-memory-exhausted-limit-reached
-
 relative_df$Species[!(relative_df$Species %in% TOPSpecies)] <- "Other"
 sum(relative_df$Abundance) #sums to 42.00003 (and we have n=42 kids...?)
 table(relative_df$Species)
@@ -804,14 +801,6 @@ table(relative_df$cd4cat)
 class(relative_df$cd4cat)
 relative_df$cd4cat <- as.factor(chi_cd4$cd4cat)
 relative_df$cd4cat <- reorder(chi_cd4$cd4cat, new.order=c("Low CD4", "Normal CD4"))
-
-# relative_df$cd4nL2 <- NA
-# relative_df$cd4nL2 [relative_df$cd4nL == 0] <- "CD4 < 25%"
-# relative_df$cd4nL2 [relative_df$cd4nL == 1] <- "CD4 >/= 25%"
-# table(relative_df$cd4nL2)
-# #matches up with table(relative_df$hiv)
-# relative_df$hiv2 <- as.factor(relative_df$hiv2)
-# relative_df$hiv2 <- reorder(relative_df$hiv2, new.order=c("HUU", "HEU", "HEI"))
 
 relative_df$Species <- factor(relative_df$Species)
 relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum",  
@@ -1015,339 +1004,40 @@ wilcox.test(Abundance ~ tmpsmx, data = spneum, exact=FALSE)  #P=0.03
 tapply(spneum$Abundance, spneum$abx, summary) #medians similar
 wilcox.test(Abundance ~ abx, data = spneum, exact=FALSE)  #P=0.54
 
-##################
-#CORRELATIONS: CD4 
-##################
-cor_p <- rename(cor_p, ab.cor_p = Abundance)
-cor_ps <- rename(cor_ps, ab.cor_ps = Abundance)
-dpig <- rename(dpig, ab.dpig = Abundance)
-hflu <- rename(hflu, ab.hflu = Abundance)
-mcat <- rename(mcat, ab.mcat = Abundance)
-spneum <- rename(spneum, ab.spneum = Abundance)
-sa <- rename(sa, ab.sa = Abundance)
+######
+#NOTE: prior version of code contained correlations and Maaslin2 code for CD4 pseq; deleted from this version as not using in manuscript
+  #remains in prior version
+#####
 
-#Create simple dataframe with abundance variables, sample_id, cd4, age, and merge on sample_id
-corr <- cor_ps[c("sample_id", "age", "pcv", "dpt", "ab.cor_ps", "newest_cd4perc", "cd4nL", "tmpsmx", "abx")]
-test <- cor_p[c("sample_id", "ab.cor_p")]
-corr <- merge(corr, test, by ="sample_id", sort = TRUE)
-test <- dpig[c("sample_id", "ab.dpig")]
-corr <- merge(corr, test, by ="sample_id", sort = TRUE)
-test <- hflu[c("sample_id", "ab.hflu")]
-corr <- merge(corr, test, by ="sample_id", sort = TRUE)
-test <- mcat[c("sample_id", "ab.mcat")]
-corr <- merge(corr, test, by ="sample_id", sort = TRUE)
-test <- spneum[c("sample_id", "ab.spneum")]
-corr <- merge(corr, test, by ="sample_id", sort = TRUE)
-test <- sa[c("sample_id", "ab.sa")]
-corr <- merge(corr, test, by ="sample_id", sort = TRUE)
+###########
+#LEFSE: CD4
+###########
+#Tutorial: https://waldronlab.io/lefser/articles/lefser.html
+#SummarizedExperiment: https://bioconductor.org/help/course-materials/2019/BSS2019/04_Practical_CoreApproachesInBioconductor.html
+#converting pseq to SE (2.3.2): https://microbiome.github.io/OMA/data-introduction.html
 
-#save as csv in case we want to come back to it
-write.csv(corr, "corrtable_cd4.csv", row.names=F)
+#will use non-transformed cd4 pseq object; Coldata = cd4nL
+#can't use with pseq object or dataframe; must use with a SummarizedExperiment object
+  #TreeSummarizedExperiment --> derived from SE and contains space for a phylogenetic tree 
 
-#Correlations
-#source: https://stats.stackexchange.com/questions/8071/how-to-choose-between-pearson-and-spearman-correlation
-#based on the above, will run both tests to look at how they compare (can help us see if the relationship is monotonic and/or linear)
+library(mia)
+data("zeller14")
+cd4_TSE <- makeTreeSummarizedExperimentFromPhyloseq(cd4)
 
-#Does CD4 percentage correlate with Coryne abundance?
-cor.test(corr$ab.cor_ps, corr$newest_cd4perc, method = "pearson") #P=0.26, cor = 0.180
-cor.test(corr$ab.cor_ps, corr$newest_cd4perc, method = "spearman", exact = FALSE) #P=0.013, cor = 0.38
-  #Yes it does!
-#Plot:
-library(ggtext)
-png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Coryne_cd4.png",
-    width = 5, height = 5, units = 'in', res = 600)
-ggplot(data = corr, aes(x = newest_cd4perc, y = ab.cor_ps)) + 
-  geom_point() + 
-  geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  labs(title="Species correlation with CD4%",x= "CD4 Percentage", y = "*C. pseudodiphtheriticum*")+
-  geom_text(x=30, y=0.37, label="r = 0.38, P = 0.013") +
-  theme_bw() +
-  theme(
-    plot.title = element_text(size = 14, hjust = 0.5),
-    legend.title = element_text(size = 12),
-    legend.text = element_text(size = 12),
-    legend.position = "right",
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 12),
-    axis.title.x = ggtext::element_markdown(),
-    axis.title.y = ggtext::element_markdown())
-dev.off()
+library(lefser)
+test <- lefser(cd4_TSE, groupCol = "cd4nL")
+head(test)
+lefserPlot(test)
+#we get results, but when we plot out there is only 1 group shown. 
 
-#CD4 and dpig abundance
-cor.test(corr$ab.dpig, corr$newest_cd4perc, method = "pearson") #P=0.04, cor = 0.324
-cor.test(corr$ab.dpig, corr$newest_cd4perc, method = "spearman", exact = FALSE) #P=0.008, cor = 0.404
+#compared zeller14 data structure and our sib_pair_TSE looks the same, so no clear issue there
+#reviewed sib lefse code with programming working group on 10/11/22; no clear error identified; may be that only 1 group is associated with differential abundance
+#ALSO: previously reported to developers on github --> impossible to tell who "group 1" is from the test alone
+#ref: https://github.com/waldronlab/lefser/issues/15
+#given our prior wilcoxon results, it is fair to assume that group 1 here in test2.df is normal cd4
+#given above issues, will save test as a csv file, and then import it to create a bar plot like we did for the Maaslin results
+write.csv(test, 'lefse_cd4.csv')
 
-png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Dpig_cd4.png",
-    width = 5, height = 5, units = 'in', res = 600)
-ggplot(data = corr, aes(x = newest_cd4perc, y = ab.dpig)) + 
-  geom_point() + 
-  geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  labs(title="Species correlation with CD4%",x= "CD4 Percentage", y = "*D. pigrum*")+
-  geom_text(x=20, y=0.39, label="r = 0.404, P = 0.008") +
-  theme_bw() +
-  theme(
-    plot.title = element_text(size = 14, hjust = 0.5),
-    legend.title = element_text(size = 12),
-    legend.text = element_text(size = 12),
-    legend.position = "right",
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 12),
-    axis.title.x = ggtext::element_markdown(),
-    axis.title.y = ggtext::element_markdown())
-dev.off()
-
-#CD4 and S.pneumo abundance
-cor.test(corr$ab.spneum, corr$newest_cd4perc, method = "pearson") #P=0.36, cor = -0.144
-cor.test(corr$ab.spneum, corr$newest_cd4perc, method = "spearman", exact = FALSE) #P=0.23, cor = -0.188
-  #won't plot as not signif
-
-#CD4 and S.aureus abundance
-cor.test(corr$ab.sa, corr$newest_cd4perc, method = "pearson") #P=0.17, cor = -0.218
-cor.test(corr$ab.sa, corr$newest_cd4perc, method = "spearman", exact = FALSE) #P=0.009, cor = -0.397
-
-png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Saureus_cd4.png",
-    width = 5, height = 5, units = 'in', res = 600)
-ggplot(data = corr, aes(x = newest_cd4perc, y = ab.sa)) + 
-  geom_point() + 
-  geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  labs(title="Species correlation with CD4%",x= "CD4 Percentage", y = "*S. aureus*")+
-  geom_text(x=30, y=0.45, label="r = -0.397, P = 0.009") +
-  theme_bw() +
-  theme(
-    plot.title = element_text(size = 14, hjust = 0.5),
-    legend.title = element_text(size = 12),
-    legend.text = element_text(size = 12),
-    legend.position = "right",
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 12),
-    axis.title.x = ggtext::element_markdown(),
-    axis.title.y = ggtext::element_markdown())
-dev.off()
-
-###CORYNE PSEUDO VS STREP PNEUMO
-cor.test(corr$ab.cor_ps, corr$ab.spneum, method = "pearson")  #P=0.46, cor = -0.118
-cor.test(corr$ab.cor_ps, corr$ab.spneum, method = "spearman", exact = FALSE)  #P=0.39, estimate = -0.136
-
-#need to plot this out and see what it looks like (overall and then by HIV status)
-#source: https://bookdown.org/dli/rguide/scatterplots-and-best-fit-lines-two-sets.html#two-scatterplots-using-ggplot2
-
-#Correlations by CD4 status:
-corr_lowcd4 <- subset(corr, cd4nL == 0)
-corr_nlcd4 <- subset(corr, cd4nL == 1)
-
-cor.test(corr_lowcd4$ab.cor_ps, corr_lowcd4$ab.spneum, method = "pearson")  #P=0.66, cor = -0.148
-cor.test(corr_lowcd4$ab.cor_ps, corr_lowcd4$ab.spneum, method = "spearman", exact = FALSE) #P=0.42, cor = 0.27
-
-cor.test(corr_nlcd4$ab.cor_ps, corr_nlcd4$ab.spneum, method = "pearson")  #P=0.49, cor = -0.128
-cor.test(corr_nlcd4$ab.cor_ps, corr_nlcd4$ab.spneum, method = "spearman", exact = FALSE) #P=0.47, cor = -0.136
-
-#Plot out
-#C. pseudodiphtheriticum vs S. pneumo plot: all participants together
-#Source for adding text: http://www.sthda.com/english/wiki/ggplot2-texts-add-text-annotations-to-a-graph-in-r-software
-library(ggtext)
-# png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Coryne_SP_all.png",
-#     width = 5, height = 5, units = 'in', res = 600)
-ggplot(data = corr, aes(x = ab.cor_ps, y = ab.spneum)) + 
-  geom_point() + 
-  geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  labs(title="Interspecies correlations",x="*C. pseudodiphtheriticum*", y = "*S. pneumoniae*")+
-  geom_text(x=0.3, y=0.55, label="r = - 0.136, P = 0.39") +
-  theme_bw() +
-  theme(
-    plot.title = element_text(size = 16, hjust = 0.5),
-    legend.title = element_text(size = 14),
-    legend.text = element_text(size = 12),
-    legend.position = "right",
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 14),
-    axis.title.x = ggtext::element_markdown(),
-    axis.title.y = ggtext::element_markdown())
-# dev.off()
-
-#What about 2 plots, one for each CD4 category? (Facet wrap)
-# png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Coryne_SP_facet.png",
-#     width = 5, height = 5, units = 'in', res = 600)
-corr$hiv <- as.factor(corr$hiv)
-corr$hiv <- reorder(corr$hiv, new.order=c("Unexposed", "Exposed Uninfected", "Infected"))
-ggplot(data = corr, aes(x = ab.cor_ps, y = ab.spneum)) + 
-  geom_point() + 
-  geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  facet_grid(~cd4nL) +
-  labs(title="Interspecies correlations",x="*C. pseudodiphtheriticum*", y = "*S. pneumoniae*")+
-  theme_bw() +
-  theme(
-    plot.title = element_text(size = 16, hjust = 0.5),
-    legend.title = element_text(size = 14),
-    legend.text = element_text(size = 12),
-    legend.position = "right",
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 14),
-    axis.title.x = ggtext::element_markdown(),
-    axis.title.y = ggtext::element_markdown())
-# dev.off()
-#manually annotate for now after export 
-
-###CORYNE PSEUDO VS STAPH AUREUS
-  #going forward, will look at correlations and plot + corr by CD4 status if significant
-cor.test(corr$ab.cor_ps, corr$ab.sa, method = "pearson")  #P=0.39, cor = -0.137
-cor.test(corr$ab.cor_ps, corr$ab.sa, method = "spearman", exact = FALSE)  #P=0.01, estimate = -0.394
-
-#signif; what does it look like by CD4 status?
-cor.test(corr_lowcd4$ab.cor_ps, corr_lowcd4$ab.sa, method = "pearson")  #P=0.59, cor = -0.182
-cor.test(corr_lowcd4$ab.cor_ps, corr_lowcd4$ab.sa, method = "spearman", exact = FALSE) #P=0.052, cor = -0.596
-
-cor.test(corr_nlcd4$ab.cor_ps, corr_nlcd4$ab.sa, method = "pearson")  #P=0.49, cor = -0.128
-cor.test(corr_nlcd4$ab.cor_ps, corr_nlcd4$ab.sa, method = "spearman", exact = FALSE) #P=0.313, cor = -0.187
-
-#Plot out
-#C. pseudodiphtheriticum vs S. aureus plot
-#Source for adding text: http://www.sthda.com/english/wiki/ggplot2-texts-add-text-annotations-to-a-graph-in-r-software
-png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Coryne_SA_cd4.png",
-    width = 5, height = 5, units = 'in', res = 600)
-ggplot(data = corr, aes(x = ab.cor_ps, y = ab.sa)) + 
-  geom_point() + 
-  geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  labs(title="Interspecies correlations",x="*C. pseudodiphtheriticum*", y = "*S. aureus*")+
-  geom_text(x=0.3, y=0.55, label="r = - 0.394, P = 0.01") +
-  theme_bw() +
-  theme(
-    plot.title = element_text(size = 16, hjust = 0.5),
-    legend.title = element_text(size = 14),
-    legend.text = element_text(size = 12),
-    legend.position = "right",
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 14),
-    axis.title.x = ggtext::element_markdown(),
-    axis.title.y = ggtext::element_markdown())
-dev.off()
-
-#What about 2 plots, one for each CD4 category? (Facet wrap)
-png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Coryne_SAcd4_facet.png",
-    width = 5, height = 5, units = 'in', res = 600)
-ggplot(data = corr, aes(x = ab.cor_ps, y = ab.sa)) + 
-  geom_point() + 
-  geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  facet_grid(~cd4nL) +
-  labs(title="Interspecies correlations",x="*C. pseudodiphtheriticum*", y = "*S. aureus*")+
-  theme_bw() +
-  theme(
-    plot.title = element_text(size = 16, hjust = 0.5),
-    legend.title = element_text(size = 14),
-    legend.text = element_text(size = 12),
-    legend.position = "right",
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 14),
-    axis.title.x = ggtext::element_markdown(),
-    axis.title.y = ggtext::element_markdown())
-dev.off()
-#manually annotate for now after export 
-
-#CORYNE PSEUDO VS M. CAT
-cor.test(corr$ab.cor_ps, corr$ab.mcat, method = "pearson")  #P=0.33, cor = -0.153
-cor.test(corr$ab.cor_ps, corr$ab.mcat, method = "spearman", exact = FALSE)  #P=0.60, estimate = -0.083
-
-#CORYNE PSEUDO VS H. FLU
-cor.test(corr$ab.cor_ps, corr$ab.hflu, method = "pearson")  #P=0.23, cor = -0.189
-cor.test(corr$ab.cor_ps, corr$ab.hflu, method = "spearman", exact = FALSE)  #P=0.15, estimate = -0.224
-
-###############
-#MAASLIN 2: CD4
-###############
-cd4.filter <- filter_taxa(cd4, function(Abundance) mean(Abundance)>=50, TRUE)
-ntaxa(cd4.filter) #45
-
-otu <- as.data.frame(otu_table(cd4.filter, taxa_are_rows=TRUE))
-#need to remove the unidentified species from here: row 10, 25, 29, 41
-#source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
-#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Paenibacillus sp. P22, Prevotellaceae bacterium Marseille-P2826
-otu <- otu[-c(10, 25, 29, 41),]
-#for some reason code to turn chi_cd4 from sample_data to data.frame is not working
-chi_cd4 <- as.data.frame(chi_cd4)
-  #recreate dataframe from cd4 pseq object
-chi_cd4 = data.frame(sample_data(cd4))
-
-#Univariable with CD4 (binary and continuous)
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_cd4, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_uv_kaiju_cd4binary", 
-  fixed_effects = c("cd4nL"))
-
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_cd4, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_uv_kaiju_cd4cont", 
-  fixed_effects = c("newest_cd4perc"))
-
-#Multivariable incorporating age, TMP-SMX use
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_cd4, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_mv_kaiju_cd4", 
-  fixed_effects = c("cd4nL", "tmpsmx", "age"))
-
-#we saw differences by CD4 status in terms of abx and recent_uri; what does model look like with these?
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_cd4, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_mv2_kaiju_cd4", 
-  fixed_effects = c("cd4nL", "abx", "uri_rec2"))
-#No significant results
-
-#What about with CD4 as a continuous variable?
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_cd4, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_mv3_kaiju_cd4", 
-  fixed_effects = c("newest_cd4perc", "abx", "uri_rec2"))
-#no significant results
-
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_cd4, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_uv_kaiju_cd4_abx", 
-  fixed_effects = c("abx"))
-#No significant results
-
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_cd4, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_uv_kaiju_cd4_urirec", 
-  fixed_effects = c("uri_rec2"))
-#URI recently also a/w lower abundance of Coryne pseudo
-
-#what about uri_rec2 + cd4 together?
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_cd4, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_mv4_kaiju_cd4", 
-  fixed_effects = c("cd4nL", "uri_rec2"))
-#Moraxella a/w uri; seems like cd4 and uri cancel each other out...
-
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_cd4, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_mv5_kaiju_cd4", 
-  fixed_effects = c("newest_cd4perc", "uri_rec2"))
-#CD4 continuous a/w Coryne propinquum, uri_rec a/w Moraxella
 
 #clean up environment to redo relative abundance analyses by viral load
 remove(chi.rel, abundances, cor_ps, corr, corr_lowcd4, corr_nlcd4, dpig, fit_data2, genus_abundances, genus_df,
