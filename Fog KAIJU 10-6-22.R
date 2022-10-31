@@ -866,7 +866,7 @@ dev.off()
   #Chao1 by HIV
 png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Chao1 by HIV KAIJU_pruned.png",
     width = 5, height = 5, units = 'in', res = 600)
-ggplot(div_child, aes(x=hiv, y=Chao1)) + 
+  ggplot(div_child, aes(x=hiv, y=Chao1)) + 
   geom_boxplot(fill="gray") + labs(title="Chao1 richness by HIV status",x="HIV status", y = "Chao1 richness")+
   theme_classic() +
   theme(
@@ -883,16 +883,17 @@ plot_richness(meta_new, x="subject", measures=c("Shannon"))
 
 ###UPDATE 7-4-22: redoing boxplots for manuscript per MK suggestion
 ###UPDATE 8-17-22: redoing boxplots as 1 supplemental figure using cowplot
+###UPDATE 10-30-22: redoing label for consistency with CLWH used elsewhere in manuscript (for FigS1_v2)
 #SDI by HIV 
 #make new variable with HIV status abbreviated
 div_child$hiv2 <- NA
-div_child$hiv2 [div_child$hiv == "Infected"] <- "Children with HIV"
+div_child$hiv2 [div_child$hiv == "Infected"] <- "Children living with HIV"
 div_child$hiv2 [div_child$hiv == "Exposed Uninfected"] <- "HEU children"
 div_child$hiv2 [div_child$hiv == "Unexposed"] <- "HUU children"
 table(div_child$hiv2)
 #matches up with table(relative_df$hiv)
 div_child$hiv2 <- as.factor(div_child$hiv2)
-div_child$hiv2 <- reorder(div_child$hiv2, new.order=c("Children with HIV", "HEU children", "HUU children"))
+div_child$hiv2 <- reorder(div_child$hiv2, new.order=c("Children living with HIV", "HEU children", "HUU children"))
 
 # png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Shannon_HIV_070422.png",
     # width = 4.5, height = 5, units = 'in', res = 600)
@@ -912,7 +913,7 @@ s1a <- ggplot(div_child, aes(x=hiv2, y=Shannon, fill=hiv2)) +
 
 #what if we try with no x axis labels and legend only? 
 s1a2 <- ggplot(div_child, aes(x=hiv2, y=Shannon, fill=hiv2)) + 
-  geom_boxplot() + labs(x="HIV status", y = "Shannon diversity index")+
+  geom_boxplot() + labs(x="HIV status", y = "Shannon index")+
   scale_fill_manual(values=c('#800000FF','#155F83FF', '#FFA319FF')) +
   theme_classic() +
   theme(
@@ -935,7 +936,7 @@ s1b <- ggplot(div_child, aes(x=hiv2, y=Chao1, fill=hiv2)) +
   theme_classic() +
   theme(
     legend.text = element_text(size = 10),
-    legend.position = "none",
+    legend.position = "right",
     legend.title = element_blank(),
     axis.text = element_text(size = 10),
     axis.title.y = element_text(size = 12),
@@ -959,7 +960,7 @@ s1b2 <- ggplot(div_child, aes(x=hiv2, y=Chao1, fill=hiv2)) +
     axis.text.x = element_blank())
 
 #try getting just legend to make it easier to size all parts of the figure
-legend <- get_legend(s1b2)
+legend <- get_legend(s1b)
   # s1b + theme(legend.box.margin = (0, 0, 0, 12))
   # ) 
 
@@ -983,7 +984,7 @@ prow2 <- plot_grid(s1a2, s1b2, labels = "AUTO", nrow = 1, ncol = 2, align = "h",
 FigS1_v2 <- plot_grid(prow2, legend, rel_widths = c(3, 1))
 
 png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/FigS1_v2.png",
-    width = 7, height = 4, units = 'in', res = 600)
+    width = 7, height = 3.5, units = 'in', res = 600)
 FigS1_v2
 dev.off()
 
@@ -1002,25 +1003,6 @@ pruned_clr <- microbiome::transform(pruned, "clr")
 #####################
 #BETA DIVERSITY PLOTS
 #####################
-#What do the non-transformed plots look like? 
-#Subject
-meta_pruned_nmds <- ordinate(pruned, method = "NMDS", distance = "bray")
-lines <- c("solid", "solid", "solid")
-bray_subj <- plot_ordination(pruned, meta_pruned_nmds, color = "subject", title = "Bray-Curtis NMDS Plot") +
-  geom_point(size = 2) + theme_classic() + theme(plot.title = element_text(size = 14, hjust = 0.5)) +
-  stat_ellipse(aes(linetype=subject), geom="polygon", alpha=0, type="t", level=0.8, size=0.7) +
-  scale_linetype_manual(values=lines)
-bray_subj
-
-#HIV status (kids only)
-chi_prune = subset_samples(pruned, subject == "child")
-meta_chi_nmds <- ordinate(chi_prune, method = "NMDS", distance = "bray")
-lines <- c("solid", "solid", "solid")
-plot_ordination(chi_prune, meta_chi_nmds, color = "hiv", title = "Bray-Curtis NMDS Plot") +
-  geom_point(size = 2) + theme_classic() + theme(plot.title = element_text(size = 14, hjust = 0.5))+
-  stat_ellipse(aes(linetype=subject), geom="polygon", alpha=0, type="t", level=0.8, size=0.7) +
-  scale_linetype_manual(values=lines)
-
 #Transformed plots --> because we have negative values in our transformed data, we CAN'T use bray-curtis or jaccard
   #Also can't use NMDS plots
   #Need to generate a PCoA plot using euclidean distances 
@@ -1204,23 +1186,25 @@ dev.off()
 #Try creating new HIV var as factor, then relevel
 table(child$hiv)
 child$hiv2 <- NA
-child$hiv2 [child$hiv == "Infected"] <- "Children with HIV"
+child$hiv2 [child$hiv == "Infected"] <- "CLWH"
 child$hiv2 [child$hiv == "Exposed Uninfected"] <- "HEU children"
 child$hiv2 [child$hiv == "Unexposed"] <- "HUU children"
 table(child$hiv2)
 class(child$hiv2)
 child$hiv2 <- as.factor(child$hiv2)
-child$hiv2 <- reorder(child$hiv2, new.order=c("Children with HIV", "HEU children", "HUU children"))
+child$hiv2 <- reorder(child$hiv2, new.order=c("CLWH", "HEU children", "HUU children"))
 
 #Import back into pseq (source: https://jacobrprice.github.io/2017/08/26/phyloseq-to-vegan-and-back.html)
 sample_data(chi_clr) <- as.data.frame(child)
 #now see if it worked:
 bloop <- data.frame(sample_data(chi_clr))
+table(bloop$hiv2)
 #success!
 remove(bloop)
 
 # png(file="clr_hiv.png",
 #     width = 5, height = 4, units = 'in', res=600)
+clr_pcoa <- ordinate(chi_clr, method = "PCoA", distance = "euclidean")
 p1 <- plot_ordination(chi_clr, clr_pcoa, color = "hiv2") +
   geom_point(size = 0.005) + theme_classic() + theme(
     plot.title = element_text(size = 14, hjust = 0.5),
@@ -1232,7 +1216,7 @@ p1 <- plot_ordination(chi_clr, clr_pcoa, color = "hiv2") +
     axis.title = element_text(size = 12)) +
   scale_color_manual(values=c('#800000FF','#155F83FF', '#FFA319FF'))+
   stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.5) +
-  xlab("PC1 (14.3%)") + ylab("PC2 (8.9%)") +
+  xlab("PC1 (14.4%)") + ylab("PC2 (8.9%)") +
   scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
 # dev.off()
 
@@ -1374,8 +1358,8 @@ melted_df <- within(melted_df, rm(sib_weight, sib_sex, sib_height, sib_muac, sib
                                     sib_bfeed_2, sib_uri_recent, sib_uri_current, sib_pcr_1, sib_pcr_2,
                                     sib_bcg, sib_hepb, sib_clinic, sib_clinic_dx___5, sib_clinic_dx_oth,
                                     sib_hosp, sib_meds, sib_meds_name, sibmo, sibyr, sib_vl1_weeks, sib_vl_weeks2,
-                                    sib_med_days, sib_dpt, sib_pcv, sib_rota, sib_polio, sib_measles, sib_age))
-melted_df <- within(melted_df, rm(samp_storage, enr_clinic, enr_clinic_other, mat_np))
+                                    sib_med_days, sib_dpt, sib_pcv, sib_rota, sib_polio, sib_measles, 
+                                    sib_age, samp_storage, enr_clinic, enr_clinic_other, mat_np))
 
 # Create dataframes with overall relative abundances of phyla and genera
 melted_df$Phylum <- as.character(melted_df$Phylum)
@@ -1410,6 +1394,7 @@ TOPPhyla <- unique(phyla_abundances$Phylum[1:5])
 phylum_df <- phyla_abundances[phyla_abundances$Phylum %in% TOPPhyla,]
 phylum_df$Phylum <- factor(phylum_df$Phylum, levels = phylum_df$Phylum[order(-phylum_df$phyla_Ab)])
 
+#create df with top 10 genera
 genus_abundances <- arrange(genus_abundances, desc(genus_Ab))  
 TOPGenera <- unique(genus_abundances$Genus[1:10])
 genus_df <- genus_abundances[genus_abundances$Genus %in% TOPGenera,]
@@ -1452,17 +1437,18 @@ show_col(chisp2)
 #Creating relative abundance figure: HIV
 #CREATING RELATIVE ABUNDANCE PLOT
   #INCORPORATING CHANGES FROM AUG 3: change Y axis to mean rel abundance, update categories for consistency with PCoA plot
+  #INCORPORATING CHANGES OCT 2022: update labels for consistency with CLWH label used elsewhere in manuscript
 #source for rotating x labels: https://stackoverflow.com/questions/1330989/rotating-and-spacing-axis-labels-in-ggplot2
 relative_df$subject_abundances <- (relative_df$Abundance)/(length(unique(relative_df$Sample))) 
 #abbreviate HIV status
 relative_df$hiv2 <- NA
-relative_df$hiv2 [relative_df$hiv == "Infected"] <- "Children with HIV"
+relative_df$hiv2 [relative_df$hiv == "Infected"] <- "CLWH"
 relative_df$hiv2 [relative_df$hiv == "Exposed Uninfected"] <- "HEU children"
 relative_df$hiv2 [relative_df$hiv == "Unexposed"] <- "HUU children"
 table(relative_df$hiv2)
 #matches up with table(relative_df$hiv)
 relative_df$hiv2 <- as.factor(relative_df$hiv2)
-relative_df$hiv2 <- reorder(relative_df$hiv2, new.order=c("Children with HIV", "HEU children", "HUU children"))
+relative_df$hiv2 <- reorder(relative_df$hiv2, new.order=c("CLWH", "HEU children", "HUU children"))
 relative_df$Species <- factor(relative_df$Species)
 relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium accolens", "Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum",  
                                                                 "Haemophilus influenzae", "Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", 

@@ -65,6 +65,9 @@ sib_pair = subset_samples(pruned, sample_id == "B.09.CHI" | sample_id == "B.09.S
                             sample_id == "B.25.SIB" | sample_id == "B.32.CHI" | sample_id == "B.32.SIB" | sample_id == "B.35.CHI" |
                             sample_id == "B.35.SIB" | sample_id == "B.48.CHI" | sample_id == "B.48.SIB")
 sib <- data.frame(sample_data(sib_pair))
+#half our problem is the time it takes to re-create all our individual pseq objects; so will save
+saveRDS(sib_pair, file = "sib10312022.rds", ascii = FALSE, version = NULL,
+        compress = FALSE, refhook = NULL)
 
 remove(pruned, meta_prune, chi_prune)
 
@@ -540,6 +543,9 @@ remove(bloop)
 vl = subset_samples(vl, sample_id != "B.04.CHI" & sample_id != "B.07.CHI" & sample_id != "B.52.CHI")
 chi_viral <- data.frame(sample_data(vl))
 
+saveRDS(vl, file = "vl.10312022.rds", ascii = FALSE, version = NULL,
+        compress = FALSE, refhook = NULL)
+
 #do the same to create a CD4 pseq object to plot
 cd4 <- hiv
 chi_cd4 <- as.data.frame(chi_cd4)
@@ -554,6 +560,11 @@ remove(bloop)
 #missing: B-45 and B-52
 cd4 = subset_samples(cd4, sample_id != "B.45.CHI" & sample_id != "B.52.CHI")
 chi_cd4 <- data.frame(sample_data(cd4))
+
+saveRDS(cd4, file = "cd4.10312022.rds", ascii = FALSE, version = NULL,
+        compress = FALSE, refhook = NULL)
+test2 <- readRDS("cd4.10312022.rds")
+remove(test2)
 
 #COME BACK TO: use same steps to make hiv_labs pseq that has n=40 and both vl and CD4 variables
 labs <- hiv
@@ -610,6 +621,7 @@ chi_cd4$cd4cat <- reorder(chi_cd4$cd4cat, new.order=c("Low CD4", "Normal CD4"))
 sample_data(cd4_clr) <- as.data.frame(chi_cd4)
 #now see if it worked:
 bloop <- data.frame(sample_data(cd4_clr))
+table(bloop$cd4cat)
 #success!
 remove(bloop)
 
@@ -626,7 +638,7 @@ clr_cd4 <- plot_ordination(cd4_clr, clr_pcoa, color = "cd4cat") +
     axis.title = element_text(size = 12)) +
   scale_color_manual(values=c('#800000FF','#155F83FF'))+
   stat_ellipse(aes(linetype=cd4cat), geom="polygon", alpha=0, type="t", level=0.8, size=0.7) +
-  xlab("PC1 (13.4%)") + ylab("PC2 (12%)") +
+  xlab("PC1 (13.4%)") + ylab("PC2 (11.5%)") +
   scale_linetype_manual(values=lines)
 # png(file="clr_cd4nl.png",
 #     width = 6, height = 4, units = 'in', res=600)
@@ -1009,9 +1021,9 @@ wilcox.test(Abundance ~ abx, data = spneum, exact=FALSE)  #P=0.54
   #remains in prior version
 #####
 
-###########
-#LEFSE: CD4
-###########
+#########################
+#LEFSE: CD4, abx, TMP-SMX
+#########################
 #Tutorial: https://waldronlab.io/lefser/articles/lefser.html
 #SummarizedExperiment: https://bioconductor.org/help/course-materials/2019/BSS2019/04_Practical_CoreApproachesInBioconductor.html
 #converting pseq to SE (2.3.2): https://microbiome.github.io/OMA/data-introduction.html
@@ -1038,6 +1050,138 @@ lefserPlot(test)
 #given above issues, will save test as a csv file, and then import it to create a bar plot like we did for the Maaslin results
 write.csv(test, 'lefse_cd4.csv')
 
+#will use this same TSE to look for differences by tmp-smx and abx use (since we used the wilcoxon results from the cd4 pseq object in our manuscript)
+tmpsmx <- lefser(cd4_TSE, groupCol = "tmpsmx")  #S. aureus, S. argentus, and M. luteus differentially abundant by TMP-SMX
+head(tmpsmx)
+lefserPlot(tmpsmx)  #the problem is figuring out which group is 0 and which group is 1
+#correlating to our wilcoxon testing, group 1 should be +TMPSMX use
+    #in our wilcoxon testing, kids exposed to TMP-SMX had a higher rel abundance of S. aureus and lower median rel abund of M. luteus
+    #but here, group 0 has a lower median rel abundance of M. luteus; not sure how to interpret the groups
+write.csv(tmpsmx, 'lefse_tmpsmx.csv')
+
+abx <- lefser(cd4_TSE, groupCol = "abx")  #no species differentially abundant by abx use using lefser
+head(abx)
+
+#The inability to distinguish group or parameter is a real problem using lefser package
+#found new package: microbial; https://github.com/guokai8/microbial and https://github.com/guokai8/microbial/issues/3
+#will install and run on cd4 phyloseq to see what our results look like BUT NOTE: this is for LDA only
+library(microbial)
+cd4lda <- ldamarker(cd4,group="cd4nL") #default normalization = relative
+plotLDA(cd4lda, group=c("0", "1"), lda = 2, pvalue = 0.05)
+
+#Other packages apparently can run LEfSe in R: yingtools2, microbiomeMarker
+  #BUT could not successfully install yingtools 2; so went with microbiomeMarker. Higher functionality than lefser
+  #Source: https://github.com/yiluheihei/microbiomeMarker/blob/master/vignettes/microbiomeMarker-vignette.Rmd
+    #(under differential analysis section)
+library(microbiomeMarker)
+#the adjusted p value for LEfSe here may be overcorrected because it will perform lefse on all taxonomic ranks
+  #will use 'taxa_rank' and set to species to avoid overcorrection
+  #also need to specify normalization method; not sure which is best; TSS = relative abundance, so will go with that to start
+#default parameters & normalization (CPM) with taxa_rank:
+cd4lefse <- run_lefse(
+  cd4,
+  wilcoxon_cutoff = 0.01,
+  group = "cd4nL",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+cd4lefse
+head(marker_table(cd4lefse))
+#summary: cd4nL = 1 aka normal CD4 a/w high LDA for D. pigrum, C propinquum, C. pseudodipht, Alloiococcus otitus, and Nocardioides NOS
+  #cd4nL = 0 aka low CD4 a/w high LDA for N. lactamica
+
+#Can we use our cd4cat as the grouping category?
+  #No; get error message: Error in split.default(subgroup, groups) : group length is 0 but data length > 0
+cd4lefse4 <- run_lefse(
+  cd4,
+  wilcoxon_cutoff = 0.01,
+  group = "cd4cat",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+#can plot this out:
+plot_ef_bar(cd4lefse)
+test <- plot_ef_bar(cd4lefse) + scale_fill_manual(values=c("0" = '#800000FF', "1" = '#155F83FF')) + 
+  theme_classic() +
+    theme(
+      plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+      # legend.text = element_text(size = 12),
+      legend.position = "none",
+      # legend.title = element_blank(),
+      axis.text = element_text(size = 10),
+      axis.text.y = element_text(face = "italic"),
+      axis.title = element_blank())
+
+#For legend purposes, will be easier to save as a csv file and then make the barplots from there so we can properly format the legends and labels
+cd4lefse <- as.data.frame(as(marker_table(cd4lefse),"matrix"),stringsAsFactors=FALSE)
+write.csv(cd4lefse, 'mm_lefse_cd4.csv')
+
+#Now will change normalization method to TSS (since I understand the concept) and re-run; no markers identified
+  #stick with default parameters
+cd4lefse2 <- run_lefse(
+  cd4,
+  wilcoxon_cutoff = 0.01,
+  norm = "TSS",
+  group = "cd4nL",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+#what if we get rid of our taxa_rank specification? what remains significant in our adjusted p values?
+cd4lefse3 <- run_lefse(
+  cd4,
+  wilcoxon_cutoff = 0.01,
+  group = "cd4nL",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  lda_cutoff = 2
+)
+
+cd4lefse3
+head(marker_table(cd4lefse3))
+#can we turn the marker table into a dataframe? Yes!
+test <- as.data.frame(as(marker_table(cd4lefse3),"matrix"),stringsAsFactors=FALSE)
+#we are most interested in species as markers that distinguish 2 groups, so will keep the taxa_group language
+
+#RE-DO LEFSE for TMP-SMX and abx
+tmplefse <- run_lefse(
+  cd4,
+  wilcoxon_cutoff = 0.01,
+  group = "tmpsmx",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+tmplefse #8 markers 
+head(marker_table(tmplefse))
+#can we turn the marker table into a dataframe? Yes!
+mm_tmp <- as.data.frame(as(marker_table(tmplefse),"matrix"),stringsAsFactors=FALSE)
+write.csv(mm_tmp, 'mm_lefse_tmpsmx.csv')
+
+abxlefse <- run_lefse(
+  cd4,
+  wilcoxon_cutoff = 0.01,
+  group = "abx",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+abxlefse #3 markers 
+head(marker_table(abxlefse))
+mm_abx <- as.data.frame(as(marker_table(tmplefse),"matrix"),stringsAsFactors=FALSE)
+write.csv(mm_abx, 'mm_lefse_abx.csv')
 
 #clean up environment to redo relative abundance analyses by viral load
 remove(chi.rel, abundances, cor_ps, corr, corr_lowcd4, corr_nlcd4, dpig, fit_data2, genus_abundances, genus_df,
@@ -1220,59 +1364,48 @@ summary(spneum$Abundance)
 tapply(spneum$Abundance, spneum$vl_suppr, summary)
 wilcox.test(Abundance ~ vl_suppr, data = spneum)  #P=0.96 (warning: ties)
 
-######################
-#MAASLIN 2: VIRAL LOAD
-######################
-vl.filter <- filter_taxa(vl, function(Abundance) mean(Abundance)>=50, TRUE)
-ntaxa(vl.filter) #46
+######
+#NOTE: prior version of code contained Maaslin2 code for vl pseq; deleted from this version as not using in manuscript
+#remains in prior version
+#####
 
-otu <- as.data.frame(otu_table(vl.filter, taxa_are_rows=TRUE))
-#need to remove the unidentified species from here: row 11, 26, 30, 42
-#source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
-#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Paenibacillus sp. P22, Prevotellaceae bacterium Marseille-P2826
-otu <- otu[-c(11, 26, 30, 42),] #42 species left
-#turn chi_viral from sample data into dataframe (by pulling it out of pseq object again)
-chi_viral = data.frame(sample_data(vl))
+##################
+#LEFSE: viral load
+##################
+vl_TSE <- makeTreeSummarizedExperimentFromPhyloseq(vl)
+viral <- lefser(vl_TSE, groupCol = "vl_suppr")
+head(viral)
+lefserPlot(viral)
+#we get results, but when we plot out there is only 1 group shown. Strep sobrinus is not a top 10 species
 
-#univariable binary
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_viral, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_uv_kaiju_vl_binary", 
-  fixed_effects = c("vl_suppr"))
-#no signficant results
+#go back to melted_df made from vl pseq object and compare the abundances of strep sobrinus by viral load
+  #not sure if this is the best way to differentiate group, but worth a shot and will check with MK
+sobr <- filter(melted_df, Species == "Streptococcus sobrinus")
+summary(sobr$Abundance)
+hist(sobr$Abundance)
+tapply(sobr$Abundance, sobr$vl_suppr, summary)  #vl '0' aka not suppressed has higher mean than '1' (both medians 0)
+wilcox.test(Abundance ~ vl_suppr, data = sobr)  #p=0.05 (warning: ties)
+#THUS: a negative LDA score for group 0 would suggest that group 0 is in fact the virally suppressed group, correct?
 
-#univariable with VL as continuous variable
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_viral, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_uv_kaiju_vl_cont", 
-  fixed_effects = c("newest_vlnum"))
-#vL a/w Haemophilus C1 and parahaemolyticus and Neisseria lactamica
+#ALSO: previously reported to developers on github --> impossible to tell who "group 0" is from the test alone
+#ref: https://github.com/waldronlab/lefser/issues/15
+#save as a csv file, and then import it to create a bar plot like we did for the Maaslin results
+write.csv(viral, 'lefse_vl.csv')
 
-#multivariable with binary vl
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_viral, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_mv_kaiju_vl", 
-  fixed_effects = c("vl_suppr", "tmpsmx", "age"))
-#no significant results
-
-#multivariable with continuous vl
-fit_data2 = Maaslin2(
-  input_data = otu, 
-  input_metadata = chi_viral, 
-  min_prevalence = 0.2,
-  max_significance = 0.2,
-  output = "maaslin_mv_kaiju_vl_cont", 
-  fixed_effects = c("newest_vlnum", "tmpsmx", "age"))
-#viral load a/w increasing H. parahaemolyticus, TMP-SMX a/w increased Staph aureus, Age a/w M. lincolnii
+###RE-DOING WITH NEW MICROBIOMEMARKER PACKAGE (see CD4 above)
+vllefse <- run_lefse(
+  vl,
+  wilcoxon_cutoff = 0.01,
+  group = "vl_suppr",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+vllefse #2 markers 
+head(marker_table(vllefse))
+mm_vl <- as.data.frame(as(marker_table(vllefse),"matrix"),stringsAsFactors=FALSE)
+write.csv(mm_vl, 'mm_lefse_vl.csv')
 
 #################################
 #HIV-HEU SIBLING PAIR COMPARISONS
@@ -1643,7 +1776,10 @@ summary(spneum$Abundance)
 tapply(spneum$Abundance, spneum$subject, summary)
 wilcox.test(Abundance ~ subject, data=spneum, paired=TRUE) #P=0.02 (warning: cannot compute exact p-value with zeroes)
 
-###LEFSE (using lefser package)###
+################
+#LEfSe: siblings
+################
+#Using lefser package: 
 #Tutorial: https://waldronlab.io/lefser/articles/lefser.html
 #SummarizedExperiment: https://bioconductor.org/help/course-materials/2019/BSS2019/04_Practical_CoreApproachesInBioconductor.html
 #converting pseq to SE (2.3.2): https://microbiome.github.io/OMA/data-introduction.html
@@ -1697,6 +1833,25 @@ lefserPlot(test2)
 
 #given above issues, will save test2 as a csv file, and then import it to create a bar plot like we did for the Maaslin results
 write.csv(test2, 'lefse_sibpair.csv')
+
+###PROBLEM: LIMITED FUNCTIONALITY as discussed above
+#re-doing with MicrobiomeMarker package
+#Original huttenhower/sagat paper: used cutoffs of 0.05 for both tests and an lda cutoff of 2
+siblefse <- run_lefse(
+  sib_pair,
+  wilcoxon_cutoff = 0.05,
+  group = "subject",
+  kw_cutoff = 0.05,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+#error message when keeping taxa_rank to just species originally; then updated the cutoffs to match original paper
+
+siblefse #9 markers 
+head(marker_table(siblefse))
+mm_sib <- as.data.frame(as(marker_table(siblefse),"matrix"),stringsAsFactors=FALSE)
+write.csv(mm_sib, 'mm_lefse_sib.csv')
 
 ##############################################
 #ANALYSIS REMOVING HEI CHILDREN WITH CD4 < 25%
