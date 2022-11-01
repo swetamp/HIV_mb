@@ -1180,7 +1180,7 @@ abxlefse <- run_lefse(
 
 abxlefse #3 markers 
 head(marker_table(abxlefse))
-mm_abx <- as.data.frame(as(marker_table(tmplefse),"matrix"),stringsAsFactors=FALSE)
+mm_abx <- as.data.frame(as(marker_table(abxlefse),"matrix"),stringsAsFactors=FALSE)
 write.csv(mm_abx, 'mm_lefse_abx.csv')
 
 #clean up environment to redo relative abundance analyses by viral load
@@ -1839,26 +1839,44 @@ write.csv(test2, 'lefse_sibpair.csv')
 #Original huttenhower/sagat paper: used cutoffs of 0.05 for both tests and an lda cutoff of 2
 siblefse <- run_lefse(
   sib_pair,
-  wilcoxon_cutoff = 0.05,
+  wilcoxon_cutoff = 0.02,
   group = "subject",
-  kw_cutoff = 0.05,
+  kw_cutoff = 0.02,
   multigrp_strat = TRUE,
   taxa_rank = "Species",
   lda_cutoff = 2
 )
-#error message when keeping taxa_rank to just species originally; then updated the cutoffs to match original paper
 
-siblefse #9 markers 
+siblefse #3 markers 
 head(marker_table(siblefse))
 mm_sib <- as.data.frame(as(marker_table(siblefse),"matrix"),stringsAsFactors=FALSE)
 write.csv(mm_sib, 'mm_lefse_sib.csv')
+
+#error message when keeping taxa_rank to just species originally; increased just slightly from 0.01 to 0.02
+###ANOTHER QUESTION: for our maaslin analysis, we restricted to just the most abundant species and then ran our differential abundance analysis testing
+#what happens if we do that here? use cutoff of 50 for consistency with maaslin
+sib.filter <- filter_taxa(sib_pair, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(sib.filter) #72
+
+siblefse2 <- run_lefse(
+  sib.filter,
+  wilcoxon_cutoff = 0.05,
+  group = "subject",
+  kw_cutoff = 0.05,
+  multigrp_strat = TRUE,
+  # norm = "TSS",
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+#No markers identified at cutoffs of 0.01, 0.05, with/without taxa_rank, and with default vs TSS normalization
 
 ##############################################
 #ANALYSIS REMOVING HEI CHILDREN WITH CD4 < 25%
 ##############################################
 #1. Compare overall composition using age-adjusted permanova
 #2. Rel abundance plots
-#3. Maaslin2
+#3. Wilcoxon
+#4. LEfSe
 
 #now need to remove the specific kids with HIV that have low CD4 (N=11)
 test <- chi_cd4[c("sample_id", "cd4nL")]
@@ -1872,6 +1890,8 @@ hucd4 = subset_samples(chi_prune, sample_id != "B.01.CHI" & sample_id != "B.03.C
                          sample_id != "B.52.CHI")
 hu <- data.frame(sample_data(hucd4))
 table(hu$hiv) #adds up: 50 HUU kids + 49 HEU kids + 31 kids with HIV (44 orig - 13 removed above)
+saveRDS(hucd4, file = "hucd4.10312022.rds", ascii = FALSE, version = NULL,
+        compress = FALSE, refhook = NULL)
 
 #SECOND: PCOA plots and PERMANOVA
 #Transform our pseq object
@@ -2121,6 +2141,52 @@ summary(spneum$Abundance)
 tapply(spneum$Abundance, spneum$hiv, summary)   #lowest abundance among children with HIV
 kruskal.test(spneum$Abundance, spneum$hiv)  #P=0.37
 
+###
+#LEfSe: Immunocompetent CLWH vs HEU, HUU
+###
+#Lefse can only do 2 group comparisons; collapse HEU + HUU into 1 group and run against CLWH (v skewed sample sizes)
+hu <- data.frame(sample_data(hucd4))
+hu$hiv2 <- NA
+hu$hiv2 [hu$hiv == "Infected"] <- "CLWH"
+hu$hiv2 [hu$hiv == "Exposed Uninfected" | hu$hiv == "Unexposed"] <- "Uninfected"
+table(hu$hiv2)
+
+#now import back into pseq obj
+sample_data(hucd4) <- as.data.frame(hu)
+#now see if it worked:
+bloop <- data.frame(sample_data(hucd4))
+table(bloop$hiv2)
+#success!
+remove(bloop)
+
+#VERSION 1: LEFSER
+library(mia)
+hu_TSE <- makeTreeSummarizedExperimentFromPhyloseq(hucd4)
+
+library(lefser)
+hu_lefser <- lefser(hu_TSE, groupCol = "hiv2")
+head(hu_lefser)
+lefserPlot(hu_lefser)
+#our prior analysis did not ID differentially abundant species; so which group is group 1?
+write.csv(hu_lefser, 'lefse_hucd4.csv')
+
+#VERSION 2: MicrobiomeMarker
+#Original huttenhower/sagat paper: used cutoffs of 0.05 for both tests and an lda cutoff of 2
+hulefse <- run_lefse(
+  hucd4,
+  wilcoxon_cutoff = 0.01,
+  group = "hiv2",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+hulefse #5 markers 
+head(marker_table(hulefse))
+mm_hu <- as.data.frame(as(marker_table(hulefse),"matrix"),stringsAsFactors=FALSE)
+write.csv(mm_hu, 'mm_lefse_hucd4.csv')
+
 ###############################################
 #ANALYSIS REMOVING HEI CHILDREN WITH CD4 >= 25%
 ###############################################
@@ -2147,6 +2213,9 @@ hlowcd4 = subset_samples(chi_prune, sample_id != "B.06.CHI" & sample_id != "B.07
               sample_id != "B.50.CHI" & sample_id != "B.51.CHI" & sample_id != "B.52.CHI")
 hlow <- data.frame(sample_data(hlowcd4))
 table(hlow$hiv) #adds up: 50 HUU kids + 49 HEU kids + 11 kids with HIV (44 orig - 33 removed above)
+
+saveRDS(hlowcd4, file = "hlowcd4.10312022.rds", ascii = FALSE, version = NULL,
+        compress = FALSE, refhook = NULL)
 
 #SECOND: PERMANOVA +/- PCoA plot
 #Transform our pseq object
@@ -2291,6 +2360,51 @@ hist(spneum$Abundance)  #lots of zeros
 summary(spneum$Abundance)
 tapply(spneum$Abundance, spneum$hiv, summary)   #highest abundance among children with HIV
 kruskal.test(spneum$Abundance, spneum$hiv)  #P=0.23
+
+###
+#LEfSe: Immunocompromised CLWH vs HEU, HUU
+###
+#Lefse can only do 2 group comparisons; collapse HEU + HUU into 1 group and run against CLWH (VERY skewed sample sizes)
+hlow$hiv2 <- NA
+hlow$hiv2 [hlow$hiv == "Infected"] <- "CLWH"
+hlow$hiv2 [hlow$hiv == "Exposed Uninfected" | hlow$hiv == "Unexposed"] <- "Uninfected"
+table(hlow$hiv2)
+
+#now import back into pseq obj
+sample_data(hlowcd4) <- as.data.frame(hlow)
+#now see if it worked:
+bloop <- data.frame(sample_data(hlowcd4))
+table(bloop$hiv2)
+#success!
+remove(bloop)
+
+#VERSION 1: LEFSER
+library(mia)
+hlow_TSE <- makeTreeSummarizedExperimentFromPhyloseq(hlowcd4)
+
+library(lefser)
+hlow_lefser <- lefser(hlow_TSE, groupCol = "hiv2")
+head(hlow_lefser)
+lefserPlot(hlow_lefser)
+#suspect group 1 is uninfected, but can't confirm
+write.csv(hlow_lefser, 'lefse_hlowcd4.csv')
+
+#VERSION 2: MicrobiomeMarker
+#Original huttenhower/sagat paper: used cutoffs of 0.05 for both tests and an lda cutoff of 2
+hlowlefse <- run_lefse(
+  hlowcd4,
+  wilcoxon_cutoff = 0.01,
+  group = "hiv2",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+hlowlefse #28 markers!
+head(marker_table(hlowlefse))
+mm_hlow <- as.data.frame(as(marker_table(hlowlefse),"matrix"),stringsAsFactors=FALSE)
+write.csv(mm_hlow, 'mm_lefse_hlowcd4.csv')
 
 #RELATIVE ABUNDANCE PLOTS (skipped for now 8-31-22)
 # Create dataframes with overall relative abundances of phyla and genera
