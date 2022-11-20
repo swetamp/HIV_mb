@@ -9,6 +9,7 @@
 #Updated Aug 3, 2022 by Sweta Patel to update figures and analyses after MK manuscript revision #1
 #Updated Aug 28, 2022 by Sweta Patel to update figures and analysis after MK manuscript revision #2
 #Updated Oct 6, 2022 by Sweta Patel to incorporate co-author feedback
+#Updated Nov 20, 2022 by Sweta Patel with Lancet GH pre-submission figure edits
 
 #***GENERAL ORDER OF STEPS***
 #1. Clean up taxtable (+ ID all corynebacterium spp and other common sp) and agglomerate at species level
@@ -884,16 +885,17 @@ plot_richness(meta_new, x="subject", measures=c("Shannon"))
 ###UPDATE 7-4-22: redoing boxplots for manuscript per MK suggestion
 ###UPDATE 8-17-22: redoing boxplots as 1 supplemental figure using cowplot
 ###UPDATE 10-30-22: redoing label for consistency with CLWH used elsewhere in manuscript (for FigS1_v2)
+###UPDATE 11-20-22: redoing label to keep CLWH in the legend (and write it out in the figure description)
 #SDI by HIV 
 #make new variable with HIV status abbreviated
 div_child$hiv2 <- NA
-div_child$hiv2 [div_child$hiv == "Infected"] <- "Children living with HIV"
+div_child$hiv2 [div_child$hiv == "Infected"] <- "CLWH"
 div_child$hiv2 [div_child$hiv == "Exposed Uninfected"] <- "HEU children"
 div_child$hiv2 [div_child$hiv == "Unexposed"] <- "HUU children"
 table(div_child$hiv2)
 #matches up with table(relative_df$hiv)
 div_child$hiv2 <- as.factor(div_child$hiv2)
-div_child$hiv2 <- reorder(div_child$hiv2, new.order=c("Children living with HIV", "HEU children", "HUU children"))
+div_child$hiv2 <- reorder(div_child$hiv2, new.order=c("CLWH", "HEU children", "HUU children"))
 
 # png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Shannon_HIV_070422.png",
     # width = 4.5, height = 5, units = 'in', res = 600)
@@ -980,8 +982,8 @@ FigS1_v1
 dev.off()
 
 #without x axis
-prow2 <- plot_grid(s1a2, s1b2, labels = "AUTO", nrow = 1, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1))
-FigS1_v2 <- plot_grid(prow2, legend, rel_widths = c(3, 1))
+prow2 <- plot_grid(s1a2, s1b2, labels = "AUTO", nrow = 1, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1.1))
+FigS1_v2 <- plot_grid(prow2, legend, rel_widths = c(2, 0.5))
 
 png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/FigS1_v2.png",
     width = 7, height = 3.5, units = 'in', res = 600)
