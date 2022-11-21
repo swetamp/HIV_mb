@@ -2123,16 +2123,16 @@ library(ggtext)
 csp <- ggplot(data = corr, aes(x = ab.cor_ps, y = ab.spneum)) + 
   geom_point() + 
   geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  labs(title="Interspecies correlations",x="*C. pseudodiphtheriticum* relative abundance", y = "*S. pneumoniae* relative abundance")+
-  geom_text(x=0.4, y=0.55, label="r = - 0.22, p = 0.009") +
+  labs(title="*C. pseudodiphtheriticum* vs *S. pneumoniae*",x="*C. pseudodiphtheriticum*", y = "*S. pneumoniae*")+
+  geom_text(size=6, x=0.4, y=0.55, label="r = - 0.22, p = 0.009") +
+  scale_x_continuous(breaks = seq(-0.1, 0.7, 0.2), limits = c(0, 0.7)) +
   theme_bw() +
   theme(
-    # plot.title = element_text(size = 16, hjust = 0.5),
-    plot.title = element_blank(),
+    plot.title = ggtext::element_markdown(size=14, hjust=0.5),
     legend.title = element_text(size = 14),
     legend.text = element_text(size = 12),
     legend.position = "right",
-    axis.text = element_text(size = 12),
+    axis.text = element_text(size = 14),
     axis.title = element_text(size = 14),
     axis.title.x = ggtext::element_markdown(),
     axis.title.y = ggtext::element_markdown())
@@ -2230,17 +2230,17 @@ cor.test(corr_huu$ab.cor_ps, corr_huu$ab.sa, method = "spearman") #P=0.03, cor =
 csa <- ggplot(data = corr, aes(x = ab.cor_ps, y = ab.sa)) + 
   geom_point() + 
   geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  labs(title="Interspecies correlations",x="*C. pseudodiphtheriticum* relative abundance", y = "*S. aureus* relative abundance")+
-  geom_text(x=0.4, y=0.55, label="r = - 0.32, p = 0.0001") +
+  labs(title="*C. pseudodiphtheriticum* vs *S. aureus*",x="*C. pseudodiphtheriticum*", y = "*S. aureus*")+
+  geom_text(size=6, x=0.4, y=0.55, label="r = - 0.32, p = 0.0001") +
   scale_y_continuous(breaks = seq(0, 0.8, 0.2), limits = c(0, 0.8)) +
+  scale_x_continuous(breaks = seq(-0.1, 0.7, 0.2), limits = c(0, 0.7)) +
   theme_bw() +
   theme(
-    # plot.title = element_text(size = 16, hjust = 0.5),
-    plot.title = element_blank(),
+    plot.title = ggtext::element_markdown(size=14, hjust=0.5),
     legend.title = element_text(size = 14),
     legend.text = element_text(size = 12),
     legend.position = "right",
-    axis.text = element_text(size = 12),
+    axis.text = element_text(size = 14),
     axis.title = element_text(size = 14),
     axis.title.x = ggtext::element_markdown(),
     axis.title.y = ggtext::element_markdown())
@@ -2480,15 +2480,16 @@ cor.test(corr$ab.dpig, corr$ab.hflu, method = "spearman", exact = FALSE)  #P=0.1
 dsp <- ggplot(data = corr, aes(x = ab.dpig, y = ab.spneum)) + 
   geom_point() + 
   geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  labs(title="Interspecies correlations",x="*D. pigrum* relative abundance", y = "*S. pneumoniae* relative abundance")+
-  geom_text(x=0.4, y=0.55, label="r = - 0.35, p < 0.0001") +
+  labs(title="*D. pigrum* vs *S. pneumoniae*",x="*D. pigrum*", y = "*S. pneumoniae*")+
+  geom_text(size=6, x=0.4, y=0.55, label="r = - 0.35, p < 0.0001") +
+  scale_x_continuous(breaks = seq(-0.1, 0.7, 0.2), limits = c(0, 0.7)) +
   theme_bw() +
   theme(
-    plot.title = element_blank(),
+    plot.title = ggtext::element_markdown(size=14, hjust=0.5),
     legend.title = element_text(size = 14),
     legend.text = element_text(size = 12),
     legend.position = "right",
-    axis.text = element_text(size = 12),
+    axis.text = element_text(size = 14),
     axis.title = element_text(size = 14),
     axis.title.x = ggtext::element_markdown(),
     axis.title.y = ggtext::element_markdown())
@@ -2497,16 +2498,17 @@ dsp <- ggplot(data = corr, aes(x = ab.dpig, y = ab.spneum)) +
 dsa <- ggplot(data = corr, aes(x = ab.dpig, y = ab.sa)) + 
   geom_point() + 
   geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  labs(title="Interspecies correlations",x="*D. pigrum* relative abundance", y = "*S. aureus* relative abundance")+
-  geom_text(x=0.4, y=0.55, label="r = - 0.30, p = 0.0003") +
+  labs(title="*D. pigrum* vs *S. aureus*",x="*D. pigrum*", y = "*S. aureus*")+
+  geom_text(size=6, x=0.4, y=0.55, label="r = - 0.30, p = 0.0003") +
   scale_y_continuous(breaks = seq(0, 0.8, 0.2), limits = c(0, 0.8)) +
+  scale_x_continuous(breaks = seq(-0.1, 0.7, 0.2), limits = c(0, 0.7)) +
   theme_bw() +
   theme(
-    plot.title = element_blank(),
+    plot.title = ggtext::element_markdown(size=14, hjust=0.5),
     legend.title = element_text(size = 14),
     legend.text = element_text(size = 12),
     legend.position = "right",
-    axis.text = element_text(size = 12),
+    axis.text = element_text(size = 14),
     axis.title = element_text(size = 14),
     axis.title.x = ggtext::element_markdown(),
     axis.title.y = ggtext::element_markdown())
@@ -2523,15 +2525,16 @@ cor.test(corr$ab.cor_p, corr$ab.hflu, method = "spearman", exact = FALSE)  #P=0.
 cpsp <- ggplot(data = corr, aes(x = ab.cor_p, y = ab.spneum)) + 
   geom_point() + 
   geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  labs(title="Interspecies correlations",x="*C. propinquum* relative abundance", y = "*S. pneumoniae* relative abundance")+
-  geom_text(x=0.4, y=0.55, label="r = - 0.29, p = 0.0005") +
+  labs(title="*C. propinquum* vs *S. pneumoniae*",x="*C. propinquum*", y = "*S. pneumoniae*")+
+  geom_text(size=6, x=0.5, y=0.55, label="r = - 0.29, p = 0.0005") +
+  scale_x_continuous(breaks = seq(-0.1, 0.9, 0.2), limits = c(0, 0.9)) +
   theme_bw() +
   theme(
-    plot.title = element_blank(),
+    plot.title = ggtext::element_markdown(size=14, hjust=0.5),
     legend.title = element_text(size = 14),
     legend.text = element_text(size = 12),
     legend.position = "right",
-    axis.text = element_text(size = 12),
+    axis.text = element_text(size = 14),
     axis.title = element_text(size = 14),
     axis.title.x = ggtext::element_markdown(),
     axis.title.y = ggtext::element_markdown())
@@ -2540,16 +2543,17 @@ cpsp <- ggplot(data = corr, aes(x = ab.cor_p, y = ab.spneum)) +
 cpsa <- ggplot(data = corr, aes(x = ab.cor_p, y = ab.sa)) + 
   geom_point() + 
   geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
-  labs(title="Interspecies correlations",x="*C. propinquum* relative abundance", y = "*S. aureus* relative abundance")+
-  geom_text(x=0.4, y=0.55, label="r = - 0.31, p = 0.0002") +
+  labs(title="*C. propinquum* vs *S. aureus*", x="*C. propinquum*", y = "*S. aureus*")+
+  geom_text(size=6, x=0.5, y=0.55, label="r = - 0.31, p = 0.0002") +
+  scale_x_continuous(breaks = seq(-0.1, 0.9, 0.2), limits = c(0, 0.9)) +
   scale_y_continuous(breaks = seq(0, 0.8, 0.2), limits = c(0, 0.8)) +
   theme_bw() +
   theme(
-    plot.title = element_blank(),
+    plot.title = ggtext::element_markdown(size=14, hjust=0.5),
     legend.title = element_text(size = 14),
     legend.text = element_text(size = 12),
     legend.position = "right",
-    axis.text = element_text(size = 12),
+    axis.text = element_text(size = 14),
     axis.title = element_text(size = 14),
     axis.title.x = ggtext::element_markdown(),
     axis.title.y = ggtext::element_markdown())
@@ -2559,10 +2563,11 @@ fig4 <- plot_grid(csp, csa, dsp, dsa, labels = "AUTO", nrow = 2, ncol = 2, align
 #UPDATED WITH C. PROPINQUUM (6 part figure)
 fig4 <- plot_grid(cpsp, cpsa, csp, csa, dsp, dsa, labels = "AUTO", nrow = 3, ncol = 2, align = "h", axis = "b")
 
-png(file="fig4.png",
+png(file="fig4_v2.png",
     width = 12, height = 12, units = 'in', res = 600)
 fig4
 dev.off()
+#note: fig4_v2 = edits from MK Nov 2022; removed "relative abundance" from all axes, adjusting axis ticks and font size, adding panel titles
 
 #D. pig logistic regression models: S. pneumo
   #univariable
