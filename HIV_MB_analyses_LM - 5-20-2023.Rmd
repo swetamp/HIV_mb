@@ -1,0 +1,707 @@
+---
+title: "HIV Microbiome Analyses - Patel et al"
+author: "Sweta Patel"
+date: "5/15/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+**General order of steps**
+1. Basic demographics
+2. Alpha diversity analyses
+3. Transform data (CLR) and do Beta-diversity analyses (PCoA plots, PERMANOVA)
+  #UPDATE 5/5: the order covariables are listed in PERMANOVA affects the results
+4. Generate relative abundance plots using NON-transformed data
+5. UPDATE 5/21: Filter on mean relative abundance of 50 and remove NOS species
+6. Differential abundance analyses using Maaslin and FILTERED data
+    #set Q value to 0.1-0.2
+7. Logistic regression analyses (Aim 2)
+
+*Note: these analyses utilize a pruned and decontaminated phyloseq object containing a cleaned taxtable and new variables created from the original variables recorded in REDCap. All coding can be found in the "Fog KAIJU 10-6-23" file.*
+
+```{r include=FALSE}
+#Loading packages 
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(phyloseq)
+library(tidyr)
+library(vegan)
+library(metagenomeSeq)
+library(httr)
+library(gridExtra)
+library(data.table)
+library(RColorBrewer)
+library(scales)
+library(gsubfn)
+library(readxl)
+library(microbiome)
+library(MASS)
+library(Maaslin2)
+library(cowplot)
+```
+
+```{r include=FALSE}
+set.seed(1234)
+#can't set wd in RMD file; entered below code into console directly
+# setwd("OneDrive - Duke University/Fogarty coding/Sequencing/")
+```
+
+### Importing and cleaning data
+
+```{r, results = FALSE}
+pruned <- readRDS("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/phy.pruned05092022.rds")
+#confirm the taxtable, etc looks good:
+test <- as.data.frame(as(tax_table(pruned),"matrix"),stringsAsFactors=FALSE)  #success!
+meta_prune <- data.frame(sample_data(pruned))
+meta_prune <- within(meta_prune, rm(sib_weight, sib_sex, sib_height, sib_muac, sib_race, sib_bfeed_1,
+                                  sib_bfeed_2, sib_uri_recent, sib_uri_current, sib_pcr_1, sib_pcr_2,
+                                  sib_bcg, sib_hepb, sib_clinic, sib_clinic_dx___5, sib_clinic_dx_oth,
+                                  sib_hosp, sib_meds, sib_meds_name, sibmo, sibyr, sib_vl1_weeks, sib_vl_weeks2,
+                                  sib_med_days, sib_dpt, sib_pcv, sib_rota, sib_polio, sib_measles, sib_age, samp_storage,
+                                  enr_clinic, enr_clinic_other, mat_np))
+remove(test)
+```
+
+### Demographics of participants with sequencing results
+
+N= 272 participants with sequencing results (of 309 enrolled participants)
+
+```{r}
+child <- subset(meta_prune, subject == "child") #n=143
+table(child$hiv)  #50 HUU kids, 49 HEU kids, 44 HIV+ kids
+
+#Age
+hist(child$age)
+summary(child$age)
+tapply(child$age, child$hiv, summary)
+kruskal.test(child$age, child$hiv)
+
+#Sex
+table(child$sex)  #74 girls
+table(child$sex, child$hiv)
+prop.table(table(child$sex, child$hiv), 2)
+summary(table(child$sex, child$hiv))
+
+#Maternal age
+hist(child$mat_age2)  #looks quite normal, but will still present median and IQR for consistency
+summary(child$mat_age2)
+tapply(child$mat_age2, child$hiv, summary)
+kruskal.test(child$mat_age2, child$hiv)
+
+#Season
+table(child$season) 
+table(child$season, child$hiv)
+prop.table(table(child$season, child$hiv), 2)
+summary(table(child$season, child$hiv))
+
+#Maternal education
+table(child$mat_educ)
+table(child$mat_educ2)
+table(child$mat_educ2, child$hiv)
+prop.table(table(child$mat_educ2, child$hiv), 2)
+summary(table(child$mat_educ2, child$hiv))
+fisher.test(child$mat_educ2, child$hiv)
+
+#Electricity
+table(child$elec) #106 children have electricity
+table(child$elec, child$hiv)
+prop.table(table(child$elec, child$hiv), 2)
+summary(table(child$elec, child$hiv))
+
+#Wood
+table(child$wood) #90 children in households using wood
+table(child$wood, child$hiv)
+prop.table(table(child$wood, child$hiv), 2)
+summary(table(child$wood, child$hiv))
+
+#Num household members
+hist(child$hhsize)
+summary(child$hhsize)
+tapply(child$hhsize, child$hiv, summary)
+kruskal.test(child$hhsize, child$hiv)
+
+#Num children <5
+hist(child$num_child)
+summary(child$num_child)
+tapply(child$num_child, child$hiv, summary)
+kruskal.test(child$num_child, child$hiv)
+
+#antibiotics
+table(child$abx) #24 children received abx
+table(child$abx, child$hiv)
+prop.table(table(child$abx, child$hiv), 2)
+summary(table(child$abx, child$hiv))
+
+#Clinic in past 3 months
+table(child$clinic)
+table(child$clinic, child$hiv)
+prop.table(table(child$clinic, child$hiv), 2)
+summary(table(child$clinic, child$hiv))
+
+#URI in past 1 month
+table(child$uri_recent)
+table(child$uri_recent, child$hiv)
+prop.table(table(child$uri_recent, child$hiv), 2)
+summary(table(child$uri_recent, child$hiv))
+
+#URI currently (don't need both this and uri recent in table 1; need to choose)
+table(child$uri_current)
+table(child$uri_current, child$hiv)
+prop.table(table(child$uri_current, child$hiv), 2)
+summary(table(child$uri_current, child$hiv))
+
+#Hospital in past 3 months -->> 4 children hospitalized, all 4 HIV+
+  #*MENTION IN MANUSCRIPT
+table(child$hosp)
+table(child$hosp, child$hiv)
+table(child$hosp_dx)  #1 with lower respiratory infx, 1 with gastroenteritis, 2 with other
+table(child$hosp_dx_oth)  #malnutrition, sepsis + chronic suppurative OM
+
+#PCV doses
+table(child$pcv)
+table(child$pcv, child$hiv)
+prop.table(table(child$pcv, child$hiv), 2)
+summary(table(child$pcv, child$hiv))
+fisher.test(child$pcv, child$hiv)
+
+#HiB
+table(child$dpt)
+table(child$dpt, child$hiv)
+prop.table(table(child$dpt, child$hiv), 2)
+summary(table(child$dpt, child$hiv))
+fisher.test(child$dpt, child$hiv)
+
+#breakdown of subjects (not for table 1, but for sequencing figure)
+table(meta_prune$subject)
+```
+
+### HIV-specific variables
+```{r}
+chi_hiv <- subset(child, hiv == "Infected")
+#restrict to just HIV variables for easier cleaning and analysis
+chi_hiv <- chi_hiv[c("child_pcr_1", "child_vl_1", "child_pcr_2", "child_vl_2", "chi_cd4_num_1", 
+                     "chi_cd4_perc_1", "chi_cd4_num_2", "chi_cd4_perc_2", "chi_cd4_weeks1", 
+                     "chi_cd4_weeks2", "child_vl1_weeks", "child_vl2_weeks",
+                     "child_arv", "child_arv_meds", "child_tmpsmx", "abx")]
+
+#How many kids receiving TMP-SMX? NOTE: we did not include these kids in the abx category. Need to re-do analyses with this included?
+table(chi_hiv$child_tmpsmx) #15 kids on TMP-SMX
+#manual inspection: 10 kids on TMP-SMX without other abx exposure
+
+#I want the most recent viral load values for my analysis. Will try creating a new variable to ID which value is more recent first:
+#missing 3 vl1 and 14vl2's
+chi_hiv$newest_vL <- NA
+chi_hiv$newest_vL [chi_hiv$child_vl1_weeks < chi_hiv$child_vl2_weeks] <- 1
+chi_hiv$newest_vL [chi_hiv$child_vl2_weeks < chi_hiv$child_vl1_weeks] <- 2
+chi_hiv$newest_vL [chi_hiv$child_vl2_weeks < 0] <- 1  #we want to include the viral loads collected BEFORE enrollment where possible
+chi_hiv$newest_vL [is.na(chi_hiv$child_vl_2)] <- 1    #if we are missing vl_2, we will use vl_1
+chi_hiv$newest_vL [is.na(chi_hiv$child_vl_1) & is.na(chi_hiv$child_vl_2)] <- NA
+table(chi_hiv$newest_vL)
+
+#Next, can we pull the viral load that was most recent using our newest_vL variable?
+  #source: https://stackoverflow.com/questions/67944727/creating-new-variable-by-selecting-column-based-on-value-of-another-column
+  #Need to do this with rows that have values (aka need to exclude the NA viral load children for this to work)
+#For future phyloseq analyses: will need to remove B-04, B-07, B-52
+chi_viral <- subset(chi_hiv, !is.na(newest_vL))
+chi_viral$Var1 <- chi_viral$child_vl_1
+chi_viral$Var2 <- chi_viral$child_vl_2
+
+chi_viral <- chi_viral %>% rowwise() %>%
+  mutate(newest_vlnum = get(paste0('Var', newest_vL)))
+#now we have a dataframe of the 41 children with viral load measurements and 1 column containing the most recent viral loads for each
+summary(chi_viral$newest_vlnum)
+table(chi_viral$newest_vlnum) #27 with viral suppression, 14 without viral suppression
+
+#make new variable for viral suppression or not, with vL < 400 = suppressed
+chi_viral$vl_suppr <- NA
+chi_viral$vl_suppr [chi_viral$newest_vlnum < 400] <- "1"
+chi_viral$vl_suppr [chi_viral$newest_vlnum >= 400] <- "0"
+table(chi_viral$vl_suppr)
+
+#REPEAT the above steps to get date associated with most recent viral load, most recent CD4, and date a/w most recent CD4
+#Viral load collection date
+chi_viral$Var1 <- chi_viral$child_vl1_weeks
+chi_viral$Var2 <- chi_viral$child_vl2_weeks
+
+chi_viral <- chi_viral %>% rowwise() %>%
+  mutate(newest_vldate = get(paste0('Var', newest_vL)))   #now have info for when vL were checked in relation to enrollment
+
+summary(chi_viral$newest_vldate)
+
+chi_viral <- within(chi_viral, rm(Var1, Var2))
+
+#CD4
+  #missing CD4 data for B-45 and B-52
+  #will focus on percentages since this is what is presented for kids
+chi_hiv$newest_cd4 <- NA
+chi_hiv$newest_cd4 [chi_hiv$chi_cd4_weeks1 < chi_hiv$chi_cd4_weeks2] <- 1
+chi_hiv$newest_cd4 [chi_hiv$chi_cd4_weeks2 < chi_hiv$chi_cd4_weeks1] <- 2
+chi_hiv$newest_cd4 [chi_hiv$chi_cd4_weeks2 < 0] <- 1  #we want to include the viral loads collected BEFORE enrollment where possible
+chi_hiv$newest_cd4 [is.na(chi_hiv$chi_cd4_perc_2)] <- 1    #if we are missing cd4_2, we will use cd4_1
+chi_hiv$newest_cd4 [is.na(chi_hiv$chi_cd4_perc_1)] <- 2    #one child is missing cd4_1 but has cd4_2
+chi_hiv$newest_cd4 [is.na(chi_hiv$chi_cd4_perc_1) & is.na(chi_hiv$chi_cd4_perc_2)] <- NA
+table(chi_hiv$newest_cd4)
+
+#create new dataframe without B-45 and B-52 (aka new df with children missing CD4 data removed)
+chi_cd4 <- subset(chi_hiv, !is.na(newest_cd4))
+chi_cd4$Var1 <- chi_cd4$chi_cd4_perc_1
+chi_cd4$Var2 <- chi_cd4$chi_cd4_perc_2
+
+chi_cd4 <- chi_cd4 %>% rowwise() %>%
+  mutate(newest_cd4perc = get(paste0('Var', newest_cd4)))
+
+summary(chi_cd4$newest_cd4perc)
+table(chi_cd4$newest_cd4perc)
+
+#make new variable for immune competent CD4 or not, with CD4 percentage *** = immune competent
+  #See sub-analyses file for code
+
+#arvs
+table(chi_hiv$child_arv)
+table(chi_hiv$child_arv_meds)
+```
+
+### Number of reads by subject class and HIV status
+
+*using pruned and agglomerated reads*
+
+```{r}
+summary(meta_prune$paired.reads)   #Median (IQR) of 73,166 (29,605; 217,115) reads per sample
+#mean 183,726 reads per sample
+hist(meta_prune$paired.reads)
+
+#Did maternal samples contain more reads than child or sib reads? --> the opposite! Why?
+#children = petri dishes
+tapply(meta_prune$paired.reads, meta_prune$subject, summary)
+kruskal.test(meta_prune$paired.reads, meta_prune$subject)
+
+#number of reads
+hist(child$paired.reads)
+summary(child$paired.reads)
+tapply(child$paired.reads, child$hiv, summary)
+kruskal.test(paired.reads ~ hiv, data = child) 
+
+#Sum of sequences
+sum(sample_sums(pruned))     #35,101,748 sequences obtained 
+mean(sample_sums(pruned))    #Mean of 129,050.5 sequences per sample
+median(sample_sums(pruned))  #Median of 45,235 sequences per sample
+summary(sample_sums(pruned)) #IQR of sequencing reads per sample: 15730, 146428
+nsamples(pruned)        #272 NP samples 
+ntaxa(pruned) #6709 taxa
+```
+
+### Alpha diversity measures
+
+*Create dataframe*
+
+```{r}
+#Create dataframe with diversity indices for each specimen using PRUNED pseq object
+diversity <- estimate_richness(pruned, measures = c("Shannon", "Simpson", "Chao1", "Observed"))
+
+setDT(diversity, keep.rownames = TRUE)[]
+colnames(diversity) <- c("sample_id", "Observed", "Chao1", "se.chao1", "Shannon", "Simpson")
+rownames(diversity) <- diversity$sample_id
+diversity <- merge(diversity, meta_prune, by="sample_id")
+```
+
+#### Observed species
+
+```{r}
+#How many species on average per sample? Did that differ by subject or by HIV status (among children only)?
+hist(diversity$Observed)
+summary(diversity$Observed) 
+sd(diversity$Observed)
+#Median (IQR) # spec: 106 (53, 260)
+#Mean (SD): 216 (300)
+
+#what does it look like by subject? Moms have significantly fewer species per sample
+tapply(diversity$Observed, diversity$subject, summary)   
+kruskal.test(Observed ~ subject, data = diversity)
+
+#what about by HIV status of the child? No signif diff
+div_child <- subset(diversity, subject == "child")
+tapply(div_child$Observed, div_child$hiv, summary)
+kruskal.test(Observed ~ hiv, data = div_child) 
+```
+
+#### Shannon
+
+```{r}
+#Is our SDI data normally distributed? 
+shapiro.test(diversity$Shannon)  #technically no, because p<0.05; looks pretty good on histogram but QQ is wonky
+histogram(diversity$Shannon)
+qqnorm(diversity$Shannon, pch = 1, frame = FALSE)
+qqline(diversity$Shannon, col = "steelblue", lwd = 2)
+
+#Shannon diversity median and IQR for all samples
+summary(diversity$Shannon)
+sd(diversity$Shannon)
+#Median (IQR) SDI: 1.85 (1.51, 2.26)
+#Mean (SD) 1.93 (0.66)  
+
+#what does it look like by subject? 
+tapply(diversity$Shannon, diversity$subject, summary)
+kruskal.test(Shannon ~ subject, data = diversity) #child signif lower (p=0.01)
+#Since our data is normal-ish in distribution, what does the ANOVA look like?
+subj.aov <- aov(Shannon ~ subject, data = diversity)
+summary(subj.aov)   #P value 0.007; SIGNIFICANT
+table(diversity$subject)
+
+#what about by HIV status of the child?
+tapply(div_child$Shannon, div_child$hiv, summary)
+kruskal.test(Shannon ~ hiv, data = div_child)   #no significant difference by HIV status using KW test (P=0.71)
+  #ANOVA
+hiv.aov <- aov(Shannon ~ hiv, data = div_child)
+summary(hiv.aov)  #P=0.37, not significant
+
+#Age of the child
+div_age <- lm(Shannon ~ age, data = div_child)
+summary(div_age)  #p=0.98
+
+#Wood smoke exposure
+tapply(div_child$Shannon, div_child$wood, summary)
+wilcox.test(Shannon ~ wood, data = div_child)   #p=0.30
+t.test(Shannon ~ wood, data = div_child)        #P=0.73
+
+#Season
+tapply(div_child$Shannon, div_child$season, summary)
+wilcox.test(Shannon ~ season, data = div_child)   #p=0.69
+t.test(Shannon ~ season, data = div_child)  #P=0.70
+
+#Receipt of abx in prior 3 months 
+tapply(div_child$Shannon, div_child$abx, summary)
+wilcox.test(Shannon ~ abx, data = div_child)   #p=0.86
+t.test(Shannon ~ abx, data = div_child)   #P=0.71
+
+#Current URI
+tapply(div_child$Shannon, div_child$uri_cur2, summary)
+wilcox.test(Shannon ~ uri_cur2, data = div_child) #p=0.65
+t.test(Shannon ~ uri_cur2, data = div_child) #p=0.37
+
+#Recent URI
+tapply(div_child$Shannon, div_child$uri_rec2, summary)
+wilcox.test(Shannon ~ uri_rec2, data = div_child) #p=0.30
+t.test(Shannon ~ uri_rec2, data = div_child) #p=0.31
+
+#Household members
+summary(div_hh <- lm(Shannon ~ hhsize, data = div_child)) #p=0.47
+
+#MULTIVARIABLE MODEL
+#Need to set reference for HIV variable
+class(div_child$hiv) #character; need to make factor to relevel
+div_child$hiv <- as.factor(div_child$hiv)
+div_child$hiv <- relevel(div_child$hiv, ref = "Unexposed")
+summary(div_mv <- lm(Shannon ~ age + hiv + wood + season + abx + uri_rec2, data = div_child))
+summary(div_mv <- lm(Shannon ~ age + hiv + wood + season + abx + uri_rec2 + hhsize, data = div_child))
+```
+
+#### Chao1
+
+```{r}
+#Is our Chao1 data normally distributed? 
+shapiro.test(diversity$Chao1)  #no, because p<0.05; also looks skewed on histogram and QQ is wonky
+histogram(diversity$Chao1)
+qqnorm(diversity$Chao1, pch = 1, frame = FALSE)
+qqline(diversity$Chao1, col = "steelblue", lwd = 2)
+
+#What does it look like if we log transform it? Will this allow for parametric testing?
+diversity$Chao1_log <- log(diversity$Chao1)
+shapiro.test(diversity$Chao1_log) 
+histogram(diversity$Chao1_log)
+qqnorm(diversity$Chao1_log, pch = 1, frame = FALSE)
+qqline(diversity$Chao1_log, col = "steelblue", lwd = 2)
+  #Looks very normal! Can use t.test and linear regression on transformed data
+div_child <- subset(diversity, subject == "child")
+
+#Chao1 median and IQR for all samples
+summary(diversity$Chao1)
+sd(diversity$Chao1)
+#Median (IQR) Chao1: 106 (53, 260)
+#Mean (SD) 216 (300.4)
+
+#what does it look like by subject? 
+tapply(diversity$Chao1, diversity$subject, summary)
+tapply(diversity$Chao1_log, diversity$subject, summary) #log mean of moms is lower
+summary(aov(Chao1_log ~ subject, data = diversity)) #significant difference (p=0.03)
+
+#what about by HIV status of the child?
+tapply(div_child$Chao1, div_child$hiv, summary)
+tapply(div_child$Chao1_log, div_child$hiv, summary)
+summary(aov(Chao1_log ~ hiv, data = div_child)) #no significant difference by HIV status using log values and ANOVA (p=0.2)
+
+#Age of the child
+summary(div_age <- lm(Chao1_log ~ age, data = div_child)) #p=0.38
+
+#Wood smoke exposure
+tapply(div_child$Chao1, div_child$wood, summary)
+t.test(Chao1_log ~ wood, data = div_child)    #p=0.93
+
+#Season
+tapply(div_child$Chao1, div_child$season, summary)
+t.test(Chao1_log ~ season, data = div_child)    #p=0.43
+
+#Receipt of abx in prior 3 months 
+tapply(div_child$Chao1, div_child$abx, summary)
+t.test(Chao1_log ~ abx, data = div_child)    #p=0.92
+
+#Current URI  #p=0.06
+tapply(div_child$Chao1_log, div_child$uri_cur2, summary)
+t.test(Chao1_log ~ uri_cur2, data = div_child)
+
+#Recent URI 
+tapply(div_child$Chao1_log, div_child$uri_rec2, summary)
+t.test(Chao1_log ~ uri_rec2, data = div_child)  #p=0.69
+
+#Household members
+summary(div_hh <- lm(Chao1_log ~ hhsize, data = div_child)) #p=0.42
+
+#MULTIVARIABLE MODEL
+#log with HUU as reference value
+class(div_child$hiv) #character; need to make factor to relevel
+div_child$hiv <- as.factor(div_child$hiv)
+div_child$hiv <- relevel(div_child$hiv, ref = "Unexposed")
+summary(div_mv <- lm(Chao1_log ~ age + hiv + wood + season + abx + uri_rec2, data = div_child))
+summary(div_mv <- lm(Chao1_log ~ age + hiv + wood + season + abx + uri_cur2, data = div_child))
+summary(div_mv <- lm(Chao1_log ~ age + hiv + wood + season + abx + uri_rec2 + hhsize, data = div_child))
+```
+
+#### Alpha diversity boxplots
+
+- Helpful resource for boxplots: http://www.sthda.com/english/wiki/ggplot2-box-plot-quick-start-guide-r-software-and-data-visualization
+
+```{r}
+#make new variable with HIV status abbreviated
+div_child$hiv2 <- NA
+div_child$hiv2 [div_child$hiv == "Infected"] <- "CLWH"
+div_child$hiv2 [div_child$hiv == "Exposed Uninfected"] <- "HEU children"
+div_child$hiv2 [div_child$hiv == "Unexposed"] <- "HUU children"
+table(div_child$hiv2)
+#matches up with table(relative_df$hiv)
+div_child$hiv2 <- as.factor(div_child$hiv2)
+div_child$hiv2 <- reorder(div_child$hiv2, new.order=c("CLWH", "HEU children", "HUU children"))
+
+#Shannon boxplot 
+s1a2 <- ggplot(div_child, aes(x=hiv2, y=Shannon, fill=hiv2)) + 
+  geom_boxplot() + labs(x="HIV status", y = "Shannon index")+
+  scale_fill_manual(values=c('#800000FF','#155F83FF', '#FFA319FF')) +
+  theme_classic() +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.position = "none",
+    legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank())
+
+#Chao1 by HIV (to create legend we will use for our combined figure)
+s1b <- ggplot(div_child, aes(x=hiv2, y=Chao1, fill=hiv2)) + 
+  geom_boxplot() + labs(x="HIV status", y = "Chao1 richness")+
+  scale_fill_manual(values=c('#800000FF','#155F83FF', '#FFA319FF')) +
+  theme_classic() +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black"))
+
+#Chao1 boxplot with no legend
+s1b2 <- ggplot(div_child, aes(x=hiv2, y=Chao1, fill=hiv2)) + 
+  geom_boxplot() + labs(x="HIV status", y = "Chao1 richness")+
+  scale_fill_manual(values=c('#800000FF','#155F83FF', '#FFA319FF')) +
+  theme_classic() +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.position = "none",
+    legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank())
+
+#Get legend only to make it easier to size all parts of the figure
+legend <- get_legend(s1b)
+
+#combine the versions using cowplot to create supplemental Figure S1
+prow2 <- plot_grid(s1a2, s1b2, labels = "AUTO", nrow = 1, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1.1))
+FigS1_v2 <- plot_grid(prow2, legend, rel_widths = c(2, 0.5))
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/FigS1_v2.png",
+    width = 7, height = 3.5, units = 'in', res = 600)
+FigS1_v2
+dev.off()
+
+#save as .eps file to comply with Lancet Microbe requirements
+ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/FigS1_v2.eps", width = 7, height = 3.5, units = "in")
+FigS1_v2
+dev.off()
+
+#clean up environment
+remove(div_age, div_mv, hiv.aov, m1, subj.aov)
+```
+- source for saving as .eps: https://stackoverflow.com/questions/5142842/export-a-graph-to-eps-file-with-r
+
+### Beta diversity measures
+
+*In order to compare overall composition by HIV status, we will first CLR transform our data and use euclidean distances for comparison*
+
+- Sources: https://rdrr.io/github/microbiome/microbiome/man/transform.html
+  https://microbiome.github.io/tutorials/Preprocessing.html
+
+```{r}
+pruned_clr <- microbiome::transform(pruned, "clr")
+chi_clr = subset_samples(pruned_clr, subject == "child")
+```
+
+#### Beta diversity plots
+
+- will save in .eps format for consistency with Lancet Microbe requirements
+
+```{r}
+#First: create new HIV variable as factor, then relevel
+table(child$hiv)
+child$hiv2 <- NA
+child$hiv2 [child$hiv == "Infected"] <- "CLWH"
+child$hiv2 [child$hiv == "Exposed Uninfected"] <- "HEU children"
+child$hiv2 [child$hiv == "Unexposed"] <- "HUU children"
+table(child$hiv2)
+class(child$hiv2)
+child$hiv2 <- as.factor(child$hiv2)
+child$hiv2 <- reorder(child$hiv2, new.order=c("CLWH", "HEU children", "HUU children"))
+
+#Import back into pseq (source: https://jacobrprice.github.io/2017/08/26/phyloseq-to-vegan-and-back.html)
+sample_data(chi_clr) <- as.data.frame(child)
+#now see if it worked:
+bloop <- data.frame(sample_data(chi_clr))
+table(bloop$hiv2)
+#success!
+remove(bloop)
+
+#Now ordinate and create PCOA plot
+clr_pcoa <- ordinate(chi_clr, method = "PCoA", distance = "euclidean")
+p1 <- plot_ordination(chi_clr, clr_pcoa, color = "hiv2") +
+  geom_point(size = 0.005) + theme_classic() + theme(
+    plot.title = element_text(size = 14, hjust = 0.5),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    legend.background = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)) +
+  scale_color_manual(values=c('#800000FF','#155F83FF', '#FFA319FF'))+
+  stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.5) +
+  xlab("PC1 (14.4%)") + ylab("PC2 (8.9%)") +
+  scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
+```
+
+#### Permanova
+
+- NOTE: since initial analysis, adonis has been depreciated so all analyses here updated with adonis2
+
+```{r}
+#Create OTU table
+otu <- as.data.frame(otu_table(chi_clr, taxa_are_rows=TRUE))
+
+#Need species in columns and observations in rows: transpose using t() function and save as a dataframe
+  #Source: https://github.com/edamame-course/2015-tutorials/blob/master/final/Ashley_Intro_to_R.md
+otu_trans <- data.frame(t(otu))
+child <- data.frame(sample_data(chi_clr))
+
+#Calculate distance and save as a matrix
+BC.dist=vegdist(otu_trans, method="euclidean")
+
+#HIV
+# adonis(BC.dist ~ hiv, data = child, permutations = 1000)
+  #Significant difference by HIV status among children (P = 0.043, R^2 = 0.019)
+adonis2(BC.dist ~ hiv, data = child, permutations = 1000)
+  #Significant difference by HIV status remains: R2 = 0.019, P = 0.039
+
+#HIV + age (per 6/9/23 MK discussion to account for age in all PERMANOVAs)
+#NOTE re: adonis2 'by' function: "by = "terms" will assess significance for each term (sequentially from first to last), setting by = "margin" will assess the marginal effects of the terms (each marginal term analysed in a model with all other variables)"
+#Source: https://search.r-project.org/CRAN/refmans/vegan/html/adonis.html
+#Previously, we used the by = "terms" function and ordered terms in multivariable models based on the R2 from each univariable model. However, it is worth exploring the by = "margin" so we can look at the marginal effects of all variables together.
+# adonis(BC.dist ~ hiv + age, data = child, permutations = 1000)
+  #Significant difference by HIV status among children (P = 0.042, R^2 = 0.019)
+    #Significant difference by age as well (P = 0.03, R^2 = 0.012)
+
+#NEW adonis2 code with by = "terms" and by = "margins"
+adonis2(BC.dist ~ hiv + age, data = child, permutations = 1000, by = "terms")
+  #Significant difference by HIV status among children (P = 0.036, R2 = 0.019) and by age (P = 0.023, R2 = 0.012
+adonis2(BC.dist ~ hiv + age, data = child, permutations = 1000, by = "margin")
+  #results are pretty consistent: HIV: p = 0.043, R2 = 0.019; age: p = 0.02, R2 = 0.12
+
+#Age
+adonis2(BC.dist ~ age, data = child, permutations = 1000)
+  #Significant difference in overall composition by age (P = 0.03, R2 = 0.012)
+
+#Season
+  #Significant difference in overall composition by season (P < 0.001, R2 = 0.016)
+adonis2(BC.dist ~ season, data = child, permutations = 1000)
+  #Season + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis2(BC.dist ~ season + age, data = child, permutations = 1000, by = "terms")
+adonis2(BC.dist ~ season + age, data = child, permutations = 1000, by = "margin")
+#Significant difference by season (P = 0.002, R^2 = 0.016) and age (P = 0.03, R2 = 0.011) by "terms"
+#Consistent by "margin": season (P = 0.004, R^2 = 0.016) and age (P = 0.03, R2 = 0.011)
+
+#Wood
+adonis2(BC.dist ~ wood, data = child, permutations = 1000)
+  #No significant difference by wood smoke exposure among children (P = 0.12)
+#Wood + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis2(BC.dist ~ wood + age, data = child, permutations = 1000, by = "terms")
+#No signif difference by wood smoke exposure (P = 0.09) but age remains signif: (P = 0.02, R^2 = 0.012)
+adonis2(BC.dist ~ wood + age, data = child, permutations = 1000, by = "margin") #consistent
+
+#Abx
+adonis2(BC.dist ~ abx, data = child, permutations = 1000)
+  #Trend but no significant difference in overall composition by abx exposure (P = 0.08)
+#Abx + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis2(BC.dist ~ abx + age, data = child, permutations = 1000, by = "terms")
+#Trend but no significant difference in overall composition by abx exposure (P = 0.06) and age remains significant; same for by = "margin"
+adonis2(BC.dist ~ abx + age, data = child, permutations = 1000, by = "margin")
+
+#Recent URI
+adonis2(BC.dist ~ uri_rec2, data = child, permutations = 1000)
+#Significant difference in composition among children with recent URI (P = 0.008, R2=0.015)
+  #Recent URI + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis2(BC.dist ~ uri_rec2 + age, data = child, permutations = 1000, by = "terms")
+adonis2(BC.dist ~ uri_rec2 + age, data = child, permutations = 1000, by = "margin")
+#Significant difference in composition by recent URI sx status (R2 = 0.015, p=0.004) and age (R2 = 0.11, p = 0.04) using both "terms" and "margin"
+
+#Multivariable
+  #NOTE: order of variables affects results when using by = "terms" per link above
+#start with model that lists covariables by effect size from univariable analysis (signif variables only)
+  #HIV R2 = 0.019, season R2 = 0.016, recent URI R2=0.015, age: R2 = 0.012
+adonis2(BC.dist ~ hiv + season + uri_rec2 + age, data = child, permutations = 1000, by = "terms")
+pm <- adonis2(BC.dist ~ hiv + season + uri_rec2 + age, data = child, permutations = 1000, by = "margin")
+  #In a multivariable model, HIV status (P=0.04, R2=0.019), season (P=0.002, R2=0.016), recent URI (P=0.01, R2=0.013), and age (P=0.04, R2=0.011) were a/w differences in overall microbiome composition using both by = options (above R2 and p values are from by = "margin")
+```
+
+Statistical reviewer from Lancet Microbe requested 95% CI for each R2 we presented. From web review appears the most straightforward way to obtain these values is through bootstrapping:
+https://stats.stackexchange.com/questions/175026/formula-for-95-confidence-interval-for-r2
+https://rstudio-pubs-static.s3.amazonaws.com/288625_b0cf85c5be974eb795cef778535289d8.html
+
+General tutorial on bootstrapping:
+https://stats.oarc.ucla.edu/r/faq/how-can-i-generate-bootstrap-statistics-in-r/
+
+```{r}
+library(boot)
+test <- function(d,i) {
+  test2 <- d[i,]
+  return(adonis2(BC.dist ~ hiv + season + uri_rec2 + age, data = child, permutations = 1000, by = "margin"))
+}
+
+set.seed(1234)
+boota <- boot(child, test, R=1000)
+boota
+
+```
