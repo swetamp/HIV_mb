@@ -43,6 +43,7 @@ library(microbiome)
 library(MASS)
 library(Maaslin2)
 library(cowplot)
+library(cluster)
 ```
 
 ```{r include=FALSE}
@@ -683,6 +684,7 @@ adonis2(BC.dist ~ uri_rec2 + age, data = child, permutations = 1000, by = "margi
   #HIV R2 = 0.019, season R2 = 0.016, recent URI R2=0.015, age: R2 = 0.012
 adonis2(BC.dist ~ hiv + season + uri_rec2 + age, data = child, permutations = 1000, by = "terms")
 pm <- adonis2(BC.dist ~ hiv + season + uri_rec2 + age, data = child, permutations = 1000, by = "margin")
+pm
   #In a multivariable model, HIV status (P=0.04, R2=0.019), season (P=0.002, R2=0.016), recent URI (P=0.01, R2=0.013), and age (P=0.04, R2=0.011) were a/w differences in overall microbiome composition using both by = options (above R2 and p values are from by = "margin")
 ```
 
@@ -695,13 +697,305 @@ https://stats.oarc.ucla.edu/r/faq/how-can-i-generate-bootstrap-statistics-in-r/
 
 ```{r}
 library(boot)
-test <- function(d,i) {
-  test2 <- d[i,]
+test <- function(child,i) {
+  test2 <- child[i,]
   return(adonis2(BC.dist ~ hiv + season + uri_rec2 + age, data = child, permutations = 1000, by = "margin"))
 }
 
 set.seed(1234)
 boota <- boot(child, test, R=1000)
 boota
+
+#This isn't working; will try to bootstrap with a simpler test to better understand the code first using UCLA tutorial
+hsb2 <- read.table("https://stats.idre.ucla.edu/stat/data/hsb2.csv", sep=",", header=T)
+fc <- function(d, i){
+	d2 <- d[i,]
+	return(cor(d2$write, d2$math))
+}
+
+# set.seed(626)
+bootcorr <- boot(hsb2, fc, R=500)
+bootcorr
+summary(bootcorr)
+
+```
+
+We also received a reviewer comment requesting Dirichlet Multi-nomial mixtures or modeling to clarify if there are some hidden groups among the data, so we will add this analysis.
+
+Tutorials: https://microbiome.github.io/OMA/clustering.html#dirichlet-multinomial-mixtures-dmm (requires TreeSummarizedExperiment data format)
+https://microbiome.github.io/tutorials/DMM.html (can use regular pseq format)
+- Update from MK: generally he does NOT use CLR transformed data for clustering, and he usually converts abundances into relative abundances and uses all taxa. Has traditionally used k-medioid clustering (PIDJ Bots paper and CID BRAVE paper), has not done DMM but is reasonable to do so here. Once we generate the clusters, need to save them as a variable in your metadata file
+
+```{r include=FALSE}
+library(DirichletMultinomial)
+
+# Thought I read somewhere to use CLR transformed data so will do that here and confirm with MK
+# Pick the OTU count matrix
+# and convert it into samples x taxa format
+# dat <- abundances(chi_clr)
+# count <- as.matrix(t(dat))
+# fit <- lapply(1:7, dmn, count = count, verbose=TRUE)
+
+# Will create our relative abundance object and then run DMM off this, and then figure out how to save the results as a variable
+#UPDATE 7/19: keep running into errors with DMM; R crashed if running any more than 3 clusters, and even with 3 not able to generate any data (NaN values for everything). Will use the k-medioid clustering done by Alex in CID paper, using the code shared on his github: https://github.com/alexmccumber/BRAVE_Kids
+```
+
+####Clustering and creating dataframes for visualizing sample composition (non-transformed data)
+
+```{r}
+chi_prune = subset_samples(pruned, subject == "child")
+phy.otus <- transform_sample_counts(chi_prune, function(Abundance) Abundance/sum(Abundance))
+otu_df <- psmelt(phy.otus)
+otu_df$OTU <- as.character(otu_df$OTU)
+otu_abundances <- aggregate(otu_df$Abundance, by=list(OTU=otu_df$OTU), FUN=sum)
+otu_abundances$x <- (otu_abundances$x)/(nsamples(chi_prune))
+names(otu_abundances)[names(otu_abundances) == 'x'] <- 'otu_Ab'
+sum(otu_abundances$otu_Ab)  #sums to 1
+nrow(otu_abundances)        #6709 species
+remove(phy.otus, otu_df)
+
+# Agglomerate taxa into species --> already done, so no need to do again
+# Transform to relative abundances
+chi.rel <- transform_sample_counts(chi_prune, function(Abundance) Abundance/sum(Abundance))
+sample_sums(chi.rel)  # This is a sanity check to make sure that relative abundance was calculated for each sample prior to pooling data
+#All samples add to 1
+melted_df <- psmelt(chi.rel)
+
+#clean up melted_df
+melted_df <- within(melted_df, rm(sib_weight, sib_sex, sib_height, sib_muac, sib_race, sib_bfeed_1,
+                                    sib_bfeed_2, sib_uri_recent, sib_uri_current, sib_pcr_1, sib_pcr_2,
+                                    sib_bcg, sib_hepb, sib_clinic, sib_clinic_dx___5, sib_clinic_dx_oth,
+                                    sib_hosp, sib_meds, sib_meds_name, sibmo, sibyr, sib_vl1_weeks, sib_vl_weeks2,
+                                    sib_med_days, sib_dpt, sib_pcv, sib_rota, sib_polio, sib_measles, 
+                                    sib_age, samp_storage, enr_clinic, enr_clinic_other, mat_np))
+```
+
+Now that we have our chi.rel pseq object, we will run our DMM models on this pseq object, and will use a lower k this time (3) to see what fits best. We previously tried k = 7 and then k = 5 and R crashed both times. 
+
+```{r}
+# Pick the OTU count matrix
+# and convert it into samples x taxa format
+dat <- abundances(chi.rel)
+count <- as.matrix(t(dat))
+fit <- lapply(1:3, dmn, count = count, verbose=TRUE)
+
+#Check model fit with different number of mixture components using standard information criteria
+lplc <- base::sapply(fit, DirichletMultinomial::laplace)
+aic <- base::sapply(fit, DirichletMultinomial::AIC)
+bic <- base::sapply(fit, DirichletMultinomial::BIC)
+#does not work; provides NaN values for all 3, so cannot plot or do anything further
+```
+
+#### K-medioid clustering
+```{r}
+# Function to make matrix usable for vegan from phyloseq object
+vegan_otu <- function(physeq) {
+    OTU <- otu_table(physeq)
+    if (taxa_are_rows(OTU)) {
+        OTU <- t(OTU)
+    }
+    return(as(OTU, "matrix"))
+}
+
+#Aggregate at species level and drop NA reads for the distance and clustering
+test <- as.data.frame(as(tax_table(chi.rel),"matrix"),stringsAsFactors=FALSE)
+
+chi.spec = tax_glom(chi.rel, taxrank = "Species") 
+
+DistType = t(as.data.frame(vegan_otu(chi.spec)))
+
+data.dist = vegdist(vegan_otu(chi.spec), method = "bray")
+
+pam.clustering=function(x,k) { # x is a distance matrix and k the number of clusters
+                         require(cluster)
+                         cluster = as.vector(pam(as.dist(x), k, diss=TRUE)$clustering)
+                         return(cluster)
+                        }
+
+#See how many clusters is ideal (range from 1 to 20)
+
+nclusters=NULL
+library(clusterSim)
+for (k in 1:20) { 
+		if (k==1) {
+			nclusters[k]=NA 
+		} else {
+			data.cluster_temp=pam.clustering(data.dist, k)
+			nclusters[k]=index.G1(t(DistType), data.cluster_temp,  d = data.dist,
+			centrotypes = "medoids")
+		}
+	}
+```
+
+**Stop after this plot and see how many clusters you have**
+```{r}
+plot(nclusters, type="h", xlab="k clusters", ylab="CH index")
+```
+
+- it looks like 5 clusters is the "best" number (source: https://stats.stackexchange.com/questions/52838/what-is-an-acceptable-value-of-the-calinski-harabasz-ch-criterion)
+
+```{r}
+#Set new number of clusters = to k based on above plot
+data.cluster=pam.clustering(data.dist, k=5)
+
+nclusters = index.G1(t(DistType), data.cluster, d = data.dist, centrotypes = "medoids")
+
+#look at number to see if it is highest average (or could change mean to median) <- note from Alex; not sure how to interpret
+obs.silhouette=mean(silhouette(data.cluster, data.dist)[,3])  #where does the 3 come from?
+obs.silhouette=median(silhouette(data.cluster, data.dist)[,3])
+  #tutorial on silhouette: https://stat.ethz.ch/R-manual/R-devel/library/cluster/html/silhouette.html
+test <- silhouette(data.cluster, data.dist)
+summary(test)
+
+library(ade4)
+obs.pcoa=dudi.pco(data.dist, scannf=F, nf=3)
+  #Get warning for non euclidean distance; we intentionally used non-transformed data and bray-curtis (not euclidean) measures, so not unexpected
+
+#reading about dudi.pco: scannf = TRUE should give you a bar plot of eigenvalues; if FALSE, then nf = number of axes to be kept
+  #how do we know that 3 axes is the right number? 
+# obs.pcoa=dudi.pco(data.dist, scannf=T) #if using scannf=T, you have to specify the number of axes no matter what
+#https://pbil.univ-lyon1.fr/R/pdf/course2.pdf --> tutorial on picking the number of axes using our obs.pcoa
+  #also walks you through eigenvalues
+obs.pcoa$eig
+sum(obs.pcoa$eig) #0.33
+barplot(obs.pcoa$eig)
+(kip <- 100 * obs.pcoa$eig/sum(obs.pcoa$eig))
+cumsum(kip) #viewing the data in a 3d space extracts only 44.5% of the info; we'd have to view in 40 axes to see 99% of the contained information. On the other hand, Alex's PC% were relatively small and the whole point of these plots is dimension reduction. Can d/w MK; do we need to re-do with a higher number of axes?
+
+s.class(obs.pcoa$li, fac=as.factor(data.cluster), grid=T,  col = c(1:5))
+  #gives you a cool figure!
+
+p = cbind(obs.pcoa$li,data.cluster)
+
+p$data.cluster = as.factor(p$data.cluster)
+
+library(RColorBrewer)
+library(scales)
+chisp2 <- c("#293352", "#800000FF", "#767676FF", "#FFA319FF", "#8A9045FF", "#155F83FF", "#C16622FF", "#4D004B", "#8F3931FF", "#58593FFF", "#350E20FF")
+show_col(chisp2)
+chisp3 <- c("#293352", "#800000FF","#8A9045FF", "#FFA319FF", "#4D004B")
+show_col(chisp3)
+
+library(ggpubr)
+clust <- ggplot(data = p, aes(x = A1, y = A2)) +
+  geom_point(data = p, aes(color = data.cluster), alpha=0.7) + 
+  scale_color_manual(values = chisp3) +
+  theme_classic() +
+    theme(
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12))+
+  stat_ellipse(aes(color = data.cluster)) +
+  stat_stars(aes(color = data.cluster), show.legend = T) +
+  # xlab("PC1 (8.5%)") + 
+  # ylab("PC2 (6.7%)") +
+  labs(color = "Microbiome Profile")+ 
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1))
+
+clust
+#Question: how to tell PC %? Standard axes are A1 and A2 instead of PC% and PC%
+
+#save for ease of review; once you figure out how to update the axes accurately and finalize the figure, will need to save as an eps file (sample code below)
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clust_v1.png",
+    width = 12, height = 9, units = 'in', res = 600)
+clust
+dev.off()
+
+# #save as .eps file to comply with Lancet Microbe requirements
+# ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clust.eps", width = 7, height = 3.5, units = "in")
+# clust
+# dev.off()
+```
+
+- Now that we have generated our clusters, we need to add this data to our metadata and see if any of our variables of interest are associated with these clusters
+
+```{r}
+sample_data(chi.spec)$cluster = as.factor(data.cluster)
+
+sampleDF = sample_data(chi.spec) %>%
+  data.frame(.)
+
+
+```
+
+```{r}
+# Create dataframes with overall relative abundances of phyla and genera
+melted_df$Phylum <- as.character(melted_df$Phylum)
+phyla_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum), FUN=sum)
+phyla_abundances$x <- (phyla_abundances$x)/(nsamples(chi.rel))
+names(phyla_abundances)[names(phyla_abundances) == 'x'] <- 'phyla_Ab'
+sum(phyla_abundances$phyla_Ab)    # Should sum to 1 (sum of relative abundances of phyla)
+nrow(phyla_abundances)            # Corresponds to # of unique phyla: 116
+melted_df$Genus <- as.character(melted_df$Genus)
+genus_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,
+                                                           OTU=melted_df$OTU), FUN=mean)
+genus_abundances <- aggregate(genus_abundances$x, by=list(Phylum=genus_abundances$Phylum,
+                                                          Genus=genus_abundances$Genus), FUN=sum)
+names(genus_abundances)[names(genus_abundances) == 'x'] <- 'genus_Ab'
+sum(genus_abundances$genus_Ab)    # Should sum to 1 (sum of relative abundances of genera)
+nrow(genus_abundances)            # Corresponds to # of unique genera: 2146
+abundances <- merge(genus_abundances, phyla_abundances, by="Phylum")
+
+melted_df$Species <- as.character(melted_df$Species)
+species_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,Species=melted_df$Species,
+                                                           OTU=melted_df$OTU), FUN=mean)
+species_abundances <- aggregate(species_abundances$x, by=list(Phylum=species_abundances$Phylum,
+                                                              Genus=species_abundances$Genus, Species=species_abundances$Species), FUN=sum)
+names(species_abundances)[names(species_abundances) == 'x'] <- 'species_Ab'
+sum(species_abundances$species_Ab)    # Should sum to 1 (sum of relative abundances of genera)
+nrow(species_abundances)            # Corresponds to # of unique species: 6708 ***WHY is this different from 6709?###
+abundances <- merge(abundances, species_abundances, by=c("Phylum", "Genus"))
+
+phyla_abundances <- arrange(phyla_abundances, desc(phyla_Ab)) 
+# Create a df with the top 5 phyla
+TOPPhyla <- unique(phyla_abundances$Phylum[1:5])
+phylum_df <- phyla_abundances[phyla_abundances$Phylum %in% TOPPhyla,]
+phylum_df$Phylum <- factor(phylum_df$Phylum, levels = phylum_df$Phylum[order(-phylum_df$phyla_Ab)])
+
+#create df with top 10 genera
+genus_abundances <- arrange(genus_abundances, desc(genus_Ab))  
+TOPGenera <- unique(genus_abundances$Genus[1:10])
+genus_df <- genus_abundances[genus_abundances$Genus %in% TOPGenera,]
+genus_df$Genus <- factor(genus_df$Genus, levels = genus_df$Genus[order(-genus_df$genus_Ab)])
+
+#create df with top 10 species
+species_abundances <- arrange(species_abundances, desc(species_Ab))  
+TOPSpecies <- unique(species_abundances$Species[1:10])
+species_df <- species_abundances[species_abundances$Species %in% TOPSpecies,]
+species_df$Species <- factor(species_df$Species, levels = species_df$Species[order(-species_df$species_Ab)])
+
+# Rename species other than top10 as "Other" in creating dataframe relative_df
+# Rename genera other than top10 as "Other" in creating dataframe relative_df 
+relative_df <- merge(melted_df, abundances, by=c("Genus", "Species"))
+#keep getting vector memory exhausted error; need to reboot R so will save melted_df and abundances as csv files
+  #source for fix: https://stackoverflow.com/questions/51295402/r-on-macos-error-vector-memory-exhausted-limit-reached
+# write.csv(melted_df, 'melted_df.csv')
+# write.csv(abundances, 'abundances.csv')
+# abundances <- read.csv("abundances.csv")
+# melted_df <- read.csv("melted_df.csv")
+#note: using the csv files led to very weird errors (sample sums 0.99 instead of 1, 1 phyla missing), 
+  #so fixed memory error and reran the code instead of using the abundances and melted_df csv files
+
+relative_df$Species[!(relative_df$Species %in% TOPSpecies)] <- "Other"
+sum(relative_df$Abundance)#sums to 143.0008; n=143 so tracks?
+table(relative_df$Species) #We have 11 levels for the Species variable, which are consistent with our top 10 + other
+
+```
+
+####HEU-CLWH Sibling Comparisons
+
+Create our limited pseq object
+```{r}
+sib_pair = subset_samples(pruned, sample_id == "B.09.CHI" | sample_id == "B.09.SIB" | sample_id == "B.16.CHI" | 
+                            sample_id == "B.16.SIB" | sample_id == "B.17.CHI" | sample_id == "B.17.SIB" | sample_id == "B.20.CHI" |
+                            sample_id == "B.20.SIB" | sample_id == "B.23.CHI" | sample_id == "B.23.SIB" | sample_id == "B.25.CHI" |
+                            sample_id == "B.25.SIB" | sample_id == "B.32.CHI" | sample_id == "B.32.SIB" | sample_id == "B.35.CHI" |
+                            sample_id == "B.35.SIB" | sample_id == "B.48.CHI" | sample_id == "B.48.SIB")
+
+sib <- data.frame(sample_data(sib_pair))
+
+#see 'Fog Kaiju sub-analyses 5-26-22.R' for full code, but cleaned + simplified metadata with standardized variables already created and saved:
+sib3 <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/sibpairs.csv")
 
 ```
