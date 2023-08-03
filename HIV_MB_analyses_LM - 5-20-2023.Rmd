@@ -874,11 +874,13 @@ library(scales)
 chisp2 <- c("#293352", "#800000FF", "#767676FF", "#FFA319FF", "#8A9045FF", "#155F83FF", "#C16622FF", "#4D004B", "#8F3931FF", "#58593FFF", "#350E20FF")
 show_col(chisp2)
 chisp3 <- c("#293352", "#800000FF","#8A9045FF", "#FFA319FF", "#4D004B")
-show_col(chisp3)
+show_col(chisp3) #bit dark, let's make a lighter set of 5 for the cluster boxplots
+chisp4 <- c("#155F83FF", "#8F3931FF", "#FFA319FF", "#8A9045FF", "#C16622FF")
+show_col(chisp4)
 
 library(ggpubr)
 clust <- ggplot(data = p, aes(x = A1, y = A2)) +
-  geom_point(data = p, aes(color = data.cluster), alpha=0.7) + 
+  geom_point(data = p, aes(color = data.cluster), alpha=1, size=1.0) + 
   scale_color_manual(values = chisp3) +
   theme_classic() +
     theme(
@@ -888,16 +890,16 @@ clust <- ggplot(data = p, aes(x = A1, y = A2)) +
     axis.title = element_text(size = 12))+
   stat_ellipse(aes(color = data.cluster)) +
   stat_stars(aes(color = data.cluster), show.legend = T) +
-  # xlab("PC1 (8.5%)") + 
-  # ylab("PC2 (6.7%)") +
+  xlab("PC1 (22.6%)") +
+  ylab("PC2 (17.3%)") +
   labs(color = "Microbiome Profile")+ 
   scale_y_continuous(labels = scales::number_format(accuracy = 0.1))
 
 clust
-#Question: how to tell PC %? Standard axes are A1 and A2 instead of PC% and PC%
+#Question: how to tell PC %? Standard axes are A1 and A2 instead of PC% and PC% --> created a pcoa plot by cluster below and used those PC%; make sure this is ok
 
 #save for ease of review; once you figure out how to update the axes accurately and finalize the figure, will need to save as an eps file (sample code below)
-png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clust_v1.png",
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clust_v2.png",
     width = 12, height = 9, units = 'in', res = 600)
 clust
 dev.off()
@@ -916,8 +918,543 @@ sample_data(chi.spec)$cluster = as.factor(data.cluster)
 sampleDF = sample_data(chi.spec) %>%
   data.frame(.)
 
+#save sampleDF as a csv file in case we need to return to it
+write.csv(sampleDF, '/Users/swetapatel/OneDrive - Duke University/Fogarty coding/metadata_clust.csv')
+
+#To get PC% for axes for above figure:
+#Create new PCoA with clusters as variable, using euclidean distances generated from CLR transforming chi.spec
+chi.spec_clr <- microbiome::transform(chi.spec, "clr")
+clr_pcoa <- ordinate(chi.spec_clr, method = "PCoA", distance = "euclidean")
+p1 <- plot_ordination(chi.spec_clr, clr_pcoa, color = "cluster") +
+  geom_point(size = 0.005) + theme_classic() + theme(
+    plot.title = element_text(size = 14, hjust = 0.5),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    legend.background = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)) +
+  scale_color_manual(values = chisp4)+
+  stat_ellipse(aes(color = cluster)) +
+  stat_stars(aes(color = cluster), show.legend = T) +
+  xlab("PC1 (14.3%)") +
+  ylab("PC2 (8.9%)") +
+  labs(color = "Microbiome Profile")
+#gives us axes of 8.9% (y) and 14.3% (x); we will input these back into our figure above and make sure this is appropriate with MK. Weird though because 2 different distances used (euclidean here, bray above) and the clusters look different; what does our pcoa look like if we use bray here too?
+clr_pcoa2 <- ordinate(chi.spec, method = "PCoA", distance = "bray")
+p1 <- plot_ordination(chi.spec, clr_pcoa2, color = "cluster") +
+  geom_point(size = 0.005) + theme_classic() + theme(
+    plot.title = element_text(size = 14, hjust = 0.5),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    legend.background = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)) +
+  scale_color_manual(values = chisp4)+
+  stat_ellipse(aes(color = cluster)) +
+  stat_stars(aes(color = cluster), show.legend = T) +
+  xlab("PC1 (22.6%)") +
+  ylab("PC2 (17.3%)") +
+  labs(color = "Microbiome Profile")
+
+p1
+
+#looks the same!! so we can use these PC% in our figure above
+
+#Alex included permanova by cluster in his R code but we don't need this; will delete from final version
+#Create OTU table
+# otu <- as.data.frame(otu_table(chi.spec_clr, taxa_are_rows=TRUE))
+# #Need species in columns and observations in rows: transpose using t() function and save as a dataframe
+#   #Source: https://github.com/edamame-course/2015-tutorials/blob/master/final/Ashley_Intro_to_R.md
+# otu_trans <- data.frame(t(otu))
+# child <- data.frame(sample_data(chi.spec_clr))
+# #Calculate distance and save as a matrix
+# BC.dist=vegdist(otu_trans, method="euclidean")
+# 
+# adonis2(BC.dist ~ hiv + age + cluster, data = sampleDF, permutations = 1000, by = "margin")
+#   #significant association between beta-diversity and age (p=0.028) and cluster (p<0.001); HIV trend but not significant p=0.099)
+# dispr <- vegan::betadisper(BC.dist, sampleDF$hiv)
+# dispr
+# 
+# boxplot(dispr, main = "", xlab = "")
+# permutest(dispr)
+# #the average distance of each group member to the centroid DIFFERS by group (I assume based on avg distance to median produced by betadisper command + the permutest P value of 0.018); does this mean that part of my results are explained by the different distances within each HIV category? 
+
+#do our clusters associate with any of our demographic variables?
+#age by cluster
+ggplot(sampleDF, aes(x=cluster, y=age)) +
+  geom_boxplot(fill=chisp4) +
+  xlab('Cluster') + 
+  ylab('Age (Months)') +
+  theme_classic()
+
+#HIV category by cluster
+ggplot(sampleDF, aes(fill=hiv, x=cluster, y=hiv)) + geom_bar(stat = "identity", position = "fill", width = 0.9) + 
+  scale_fill_manual(values = c('#800000FF','#155F83FF', '#FFA319FF'))+
+  xlab('Cluster')+
+  theme_classic()
+#doesn't work; need to create frequency of HIV category by cluster, turn them into frequencies, and then create a stacked barplot from that like we did with the PCV13 paper
+
+#UPDATE to the above code: saves time because you don't have to manually create frequencies; use stat = "count" and get rid of your y= in aes
+ggplot(sampleDF, aes(fill=hiv2, x=cluster)) + geom_bar(stat = "count", position = "fill", width = 0.9) + 
+  scale_fill_manual(values = c('#800000FF','#155F83FF', '#FFA319FF'))+
+  xlab('Cluster')+
+  theme_classic()
+
+#Create new category of HIV to match our prior figure labels:
+sampleDF$hiv2 <- NA
+sampleDF$hiv2 [sampleDF$hiv == "Infected"] <- "CLWH"
+sampleDF$hiv2 [sampleDF$hiv == "Exposed Uninfected"] <- "HEU children"
+sampleDF$hiv2 [sampleDF$hiv == "Unexposed"] <- "HUU children"
+table(sampleDF$hiv2)
+#matches up with table(relative_df$hiv)
+sampleDF$hiv2 <- as.factor(sampleDF$hiv2)
+sampleDF$hiv2 <- reorder(sampleDF$hiv2, new.order=c("CLWH", "HEU children", "HUU children"))
+
+#generate frequency data and calculate the proportions of HIV category for each cluster separately; then rbind back together
+freq <- table(sampleDF$hiv2, sampleDF$cluster)
+freq <- as.data.frame(freq)
+colnames(freq) <- c("hiv", "cluster", "freq")
+
+c1 <- subset(freq, cluster==1)
+c1$newfreq <- (c1$freq)/44
+sum(c1$newfreq)
+
+c2 <- subset(freq, cluster==2)
+c2$newfreq <- (c2$freq)/27
+sum(c2$newfreq)
+
+c3 <- subset(freq, cluster==3)
+c3$newfreq <- (c3$freq)/16
+sum(c3$newfreq)
+
+c4 <- subset(freq, cluster==4)
+c4$newfreq <- (c4$freq)/29
+sum(c4$newfreq)
+
+c5 <- subset(freq, cluster==5)
+c5$newfreq <- (c5$freq)/27
+sum(c5$newfreq)
+
+#extra check
+44+27+16+29+27 #all denominators add up to 143
+
+freq <- rbind(c1, c2, c3, c4, c5)
+
+#Now create figure
+hiv_clust <- ggplot(freq, aes(fill=hiv, x=cluster, y=newfreq)) + geom_bar(stat= "identity", position = "fill", width = 0.9) +
+  scale_fill_manual(values = c('#800000FF','#155F83FF', '#FFA319FF')) +
+  scale_y_continuous(labels = waiver()) +  
+  scale_x_discrete(labels=xlab) +
+  labs(title=" ", x="Microbiome profile", y="Proportion of Children", fill = "HIV status")+
+  theme_classic() +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12))
+
+#it looks like cluster 2 has a lot more CLWH; will do an analysis comparing cluster 2 to all other clusters by HIV status
+
+#For coding learning; the above took way too much effort. Can we get the same results with geom_bar stat = count?
+hiv_clust <- ggplot(sampleDF, aes(fill=hiv2, x=cluster)) + geom_bar(stat= "count", position = "fill", width = 0.9) +
+  scale_fill_manual(values = c('#800000FF','#155F83FF', '#FFA319FF')) +
+  # scale_y_continuous(labels = waiver()) +  
+  scale_x_discrete(labels=xlab) +
+  labs(title=" ", x="Microbiome profile", y="Proportion of children", fill = "HIV status")+
+  theme_classic() +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12))
+
+#save for ease of review; if you include in manuscript, will need to save as an eps file (sample code below)
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/HIV_by_clust.png",
+    width = 12, height = 9, units = 'in', res = 600)
+hiv_clust
+dev.off()
+
+# #save as .eps file to comply with Lancet Microbe requirements
+# ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/FILENAMEHERE.eps", width = 7, height = 3.5, units = "in")
+# p
+# dev.off()
+
+#Are there any other variables we should look at visually? What about wood and antibiotics? Not signif associated below but it makes sense that they could affect microbiome composition
+sampleDF$wood2 <- NA
+sampleDF$wood2 [sampleDF$wood == "0"] <- "No"
+sampleDF$wood2 [sampleDF$wood == "1"] <- "Yes"
+table(sampleDF$wood2)
+#matches up with table(relative_df$hiv)
+sampleDF$wood2 <- as.factor(sampleDF$wood2)
+sampleDF$wood2 <- reorder(sampleDF$wood2, new.order=c("Yes", "No"))
+wood_clust <- ggplot(sampleDF, aes(fill=wood2, x=cluster)) + geom_bar(stat = "count", position = "fill", width = 0.9) + 
+  scale_fill_manual(values = c('#800000FF','#155F83FF'))+
+  scale_x_discrete(labels=xlab) +
+  labs(title=" ", x="Microbiome profile", y="Proportion of children", fill = "Wood smoke exposure")+
+  theme_classic() +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12))
+
+wood_clust
+#can try 2 comparisons: 1+5 vs 2-4, and 2 vs all other clusters 
+
+class(sampleDF$abx)
+sampleDF$abx <- as.factor(sampleDF$abx)
+sampleDF$abx <- reorder(sampleDF$abx, new.order=c("Yes", "No"))
+abx_clust <- ggplot(sampleDF, aes(fill=abx, x=cluster)) + geom_bar(stat = "count", position = "fill", width = 0.9) + 
+  scale_fill_manual(values = c('#800000FF','#155F83FF'))+
+  scale_x_discrete(labels=xlab) +
+  labs(title=" ", x="Microbiome profile", y="Proportion of children", fill = "Antibiotic exposure")+
+  theme_classic() +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12))
+
+abx_clust
+#if we group 1 and 5 together and 2-4 together, what does that look like?
+
+#Since we are doing all these split comparisons based on our bar plot results, we will save these using cowplot in case we want to include them as a supplemental figure
+fig_barclust <- plot_grid(hiv_clust, wood_clust, abx_clust, labels = c('A', 'B', 'C'), align = "h", axis = "b", label_size = 12)
+fig_barclust
+
+#save as .eps file to comply with Lancet Microbe requirements
+ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/barclust_combined.eps", width = 9, height = 5, units = "in")
+fig_barclust
+dev.off()
 
 ```
+
+- Statistical testing of demographic variables by biotype (as done in CID paper); will use same variables as used in Table 1 (plus HIV)
+```{r}
+#Age
+tapply(sampleDF$age, sampleDF$cluster, summary)
+kruskal.test(sampleDF$age, sampleDF$cluster) #p=0.04
+
+#Sex
+table(sampleDF$sex, sampleDF$cluster)
+prop.table(table(sampleDF$sex, sampleDF$cluster), 2)
+summary(table(sampleDF$sex, sampleDF$cluster))
+
+#HIV status!
+table(sampleDF$hiv, sampleDF$cluster)
+prop.table(table(sampleDF$hiv, sampleDF$cluster), 2)
+summary(table(sampleDF$hiv, sampleDF$cluster))
+fisher.test(sampleDF$hiv, sampleDF$cluster)
+#received following error: Error in fisher.test(sampleDF$hiv, sampleDF$cluster) : 
+  #FEXACT error 7(location). LDSTP=18630 is too small for this problem,
+ # (pastp=64.7107, ipn_0:=ipoin[itp=201]=9, stp[ipn_0]=62.0229).
+#Increase workspace or consider using 'simulate.p.value=TRUE'
+fisher.test(sampleDF$hiv, sampleDF$cluster, simulate.p.value = TRUE)
+
+#Maternal age
+tapply(sampleDF$mat_age2, sampleDF$cluster, summary)
+kruskal.test(sampleDF$mat_age2, sampleDF$cluster)
+
+#Season
+table(sampleDF$season, sampleDF$cluster)
+prop.table(table(sampleDF$season, sampleDF$cluster), 2)
+summary(table(sampleDF$season, sampleDF$cluster)) #p=0.008!
+
+#Maternal education
+table(sampleDF$mat_educ2)
+table(sampleDF$mat_educ2, sampleDF$cluster)
+prop.table(table(sampleDF$mat_educ2, sampleDF$cluster), 2)
+# summary(table(sampleDF$mat_educ2, sampleDF$cluster))
+fisher.test(sampleDF$mat_educ2, sampleDF$cluster)
+
+#Electricity
+table(sampleDF$elec, sampleDF$cluster)
+prop.table(table(sampleDF$elec, sampleDF$cluster), 2)
+# summary(table(sampleDF$elec, sampleDF$cluster))
+fisher.test(sampleDF$elec, sampleDF$cluster)
+
+#Wood 
+table(sampleDF$wood, sampleDF$cluster)
+prop.table(table(sampleDF$wood, sampleDF$cluster), 2)
+summary(table(sampleDF$wood, sampleDF$cluster))
+
+#Num household members
+tapply(sampleDF$hhsize, sampleDF$cluster, summary)
+kruskal.test(sampleDF$hhsize, sampleDF$cluster)
+
+#antibiotics
+table(sampleDF$abx) #24 children received abx
+table(sampleDF$abx, sampleDF$cluster)
+prop.table(table(sampleDF$abx, sampleDF$cluster), 2)
+# summary(table(sampleDF$abx, sampleDF$cluster))
+fisher.test(sampleDF$abx, sampleDF$cluster)
+
+#URI in past 1 month
+table(sampleDF$uri_recent) #59 kids with URI sx
+table(sampleDF$uri_rec2, sampleDF$cluster)
+prop.table(table(sampleDF$uri_rec2, sampleDF$cluster), 2)
+summary(table(sampleDF$uri_rec2, sampleDF$cluster))
+
+#PCV doses
+sampleDF$pcv3 <- NA
+sampleDF$pcv3 [sampleDF$pcv == 0 | sampleDF$pcv == 1 | sampleDF$pcv == 2] <- "No"
+sampleDF$pcv3 [sampleDF$pcv == 3] <- "Yes"
+table(sampleDF$pcv3)
+table(sampleDF$pcv) #confirms numbers match up
+table(sampleDF$pcv3, sampleDF$cluster)
+prop.table(table(sampleDF$pcv3, sampleDF$cluster), 2)
+# summary(table(sampleDF$pcv3, sampleDF$cluster))
+fisher.test(sampleDF$pcv3, sampleDF$cluster)
+
+#HiB
+sampleDF$dpt3 <- NA
+sampleDF$dpt3 [sampleDF$dpt == 0 | sampleDF$dpt == 1 | sampleDF$dpt == 2] <- "No"
+sampleDF$dpt3 [sampleDF$dpt == 3] <- "Yes"
+table(sampleDF$dpt3)
+table(sampleDF$dpt) #confirms numbers match up
+table(sampleDF$dpt3, sampleDF$cluster)
+prop.table(table(sampleDF$dpt3, sampleDF$cluster), 2)
+# summary(table(sampleDF$dpt3, sampleDF$cluster))
+fisher.test(sampleDF$dpt3, sampleDF$cluster)
+```
+
+Combining profiles to look for specific associations given the barplots above for HIV status, wood smoke exposure, and antibiotic exposure:
+
+```{r}
+sampleDF$clust15 <- NA
+sampleDF$clust15 [sampleDF$cluster == "1" | sampleDF$cluster == "5"] <- "C-D"
+sampleDF$clust15 [sampleDF$cluster == "2" | sampleDF$cluster == "3" |sampleDF$cluster == "4"] <- "Other"
+table(sampleDF$clust15)
+
+sampleDF$clust2 <- NA
+sampleDF$clust2 [sampleDF$cluster == "2"] <- "SP-HI"
+sampleDF$clust2 [sampleDF$cluster == "1" | sampleDF$cluster == "3" |sampleDF$cluster == "4" |sampleDF$cluster == "5"] <- "Other"
+table(sampleDF$clust2)
+
+#HIV 
+#by cluster 2
+table(sampleDF$hiv, sampleDF$clust2)
+prop.table(table(sampleDF$hiv, sampleDF$clust2), 2)
+summary(table(sampleDF$hiv, sampleDF$clust2)) #P=0.013!!!
+
+#by cluster 1+5 
+table(sampleDF$hiv, sampleDF$clust15)
+prop.table(table(sampleDF$hiv, sampleDF$clust15), 2)
+summary(table(sampleDF$hiv, sampleDF$clust15)) #no significant association
+
+#wood smoke 
+#by cluster 2
+table(sampleDF$wood, sampleDF$clust2)
+prop.table(table(sampleDF$wood, sampleDF$clust2), 2)
+summary(table(sampleDF$wood, sampleDF$clust2)) #P = 0.045
+
+#by cluster 1+5 
+table(sampleDF$wood, sampleDF$clust15)
+prop.table(table(sampleDF$wood, sampleDF$clust15), 2)
+summary(table(sampleDF$wood, sampleDF$clust15)) #P = 0.014
+
+#antibiotics
+#by cluster 2
+table(sampleDF$abx, sampleDF$clust2)
+prop.table(table(sampleDF$abx, sampleDF$clust2), 2)
+summary(table(sampleDF$abx, sampleDF$clust2)) #P = 0.047 but may be incorrect (some n < 10 but not <5; has cutoff changed?)
+fisher.test(sampleDF$abx, sampleDF$clust2) #P = 0.08
+
+#by cluster 1+5 
+table(sampleDF$abx, sampleDF$clust15)
+prop.table(table(sampleDF$abx, sampleDF$clust15), 2)
+summary(table(sampleDF$abx, sampleDF$clust15)) #P = 0.008
+```
+
+- Microbiome factors: did alpha diversity differ by cluster? What species comprised each cluster?
+
+```{r}
+Shannon = estimate_richness(chi.spec, measures = "Shannon")%>%
+  cbind(., sampleDF, by = "names") #used Alex's code but this gives you a new dataframe to use called "Shannon"
+
+tapply(Shannon$Shannon, Shannon$cluster, summary)
+kruskal.test(Shannon$Shannon, Shannon$cluster) #P<0.001
+
+shan <- ggplot(Shannon, aes(x=cluster, y=Shannon, fill=cluster)) + 
+  geom_boxplot() + labs(x="Microbiome profile", y = "Shannon index")+
+  scale_fill_manual(values=chisp4) +
+  theme_classic() +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.position = "none",
+    legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12))
+
+#save for ease of review; if you include in manuscript, will need to save as an eps file (sample code below)
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SDI_by_clust.png",
+    width = 12, height = 9, units = 'in', res = 600)
+shan
+dev.off()
+
+#save as .eps file to comply with Lancet Microbe requirements
+ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SDI_by_clust.eps", width = 7, height = 3.5, units = "in")
+shan
+dev.off()
+
+```
+
+```{r}
+#Cluster composition
+sample_data(chi.spec)$cluster = as.factor(data.cluster)
+
+psC1 = subset_samples(chi.spec, sample_data(chi.spec)$cluster == 1)
+speciesDF = as.data.frame(cbind((otu_table(psC1, taxa_are_rows = FALSE)), tax_table(psC1)))
+rownames(speciesDF) = NULL
+speciesDF$Kingdom = NULL
+speciesDF$Phylum=NULL
+speciesDF$Class=NULL
+speciesDF$Order=NULL
+speciesDF$Family=NULL
+row.names(speciesDF) <-  speciesDF$Species #keep getting an error message: "Warning: non-unique value when setting 'row.names': ‘NA;g;s’
+  #Error in `.rowNamesDF<-`(x, value = value) : 
+  #duplicate 'row.names' are not allowed
+#may be due to the unnamed species in the table; will remove them and try again
+speciesDF$Species <- gsub(";", NA, speciesDF$Species)
+speciesDF <- speciesDF %>% drop_na(Species) #Go from 6709 --> 6162 rows
+speciesDF$Genus=NULL
+speciesDF$Species = NULL
+speciesDF = mutate_all(speciesDF, function(x) as.numeric(as.character(x)))
+
+speciesDF$C1 = rowMeans(speciesDF)
+
+AvgDF1 = speciesDF$C1
+
+#now repeat this process for clusters 2-5, saving AvgDF2-5 in the process so we can bind them all together at the end
+
+psC1 = subset_samples(chi.spec, sample_data(chi.spec)$cluster == 2)
+speciesDF = as.data.frame(cbind((otu_table(psC1, taxa_are_rows = FALSE)), tax_table(psC1)))
+speciesDF$Species <- gsub(";", NA, speciesDF$Species)
+speciesDF <- speciesDF %>% drop_na(Species) #Go from 6709 --> 6162 rows
+row.names(speciesDF) <-  speciesDF$Species 
+speciesDF$Kingdom = NULL
+speciesDF$Phylum=NULL
+speciesDF$Class=NULL
+speciesDF$Order=NULL
+speciesDF$Family=NULL
+speciesDF$Genus=NULL
+speciesDF$Species = NULL
+speciesDF = mutate_all(speciesDF, function(x) as.numeric(as.character(x)))
+speciesDF$C1 = rowMeans(speciesDF)
+AvgDF2 = speciesDF$C1
+
+psC1 = subset_samples(chi.spec, sample_data(chi.spec)$cluster == 3)
+speciesDF = as.data.frame(cbind((otu_table(psC1, taxa_are_rows = FALSE)), tax_table(psC1)))
+speciesDF$Species <- gsub(";", NA, speciesDF$Species)
+speciesDF <- speciesDF %>% drop_na(Species) #Go from 6709 --> 6162 rows
+row.names(speciesDF) <-  speciesDF$Species 
+speciesDF$Kingdom = NULL
+speciesDF$Phylum=NULL
+speciesDF$Class=NULL
+speciesDF$Order=NULL
+speciesDF$Family=NULL
+speciesDF$Genus=NULL
+speciesDF$Species = NULL
+speciesDF = mutate_all(speciesDF, function(x) as.numeric(as.character(x)))
+speciesDF$C1 = rowMeans(speciesDF)
+AvgDF3 = speciesDF$C1
+
+psC1 = subset_samples(chi.spec, sample_data(chi.spec)$cluster == 4)
+speciesDF = as.data.frame(cbind((otu_table(psC1, taxa_are_rows = FALSE)), tax_table(psC1)))
+speciesDF$Species <- gsub(";", NA, speciesDF$Species)
+speciesDF <- speciesDF %>% drop_na(Species) #Go from 6709 --> 6162 rows
+row.names(speciesDF) <-  speciesDF$Species 
+speciesDF$Kingdom = NULL
+speciesDF$Phylum=NULL
+speciesDF$Class=NULL
+speciesDF$Order=NULL
+speciesDF$Family=NULL
+speciesDF$Genus=NULL
+speciesDF$Species = NULL
+speciesDF = mutate_all(speciesDF, function(x) as.numeric(as.character(x)))
+speciesDF$C1 = rowMeans(speciesDF)
+AvgDF4 = speciesDF$C1
+
+psC1 = subset_samples(chi.spec, sample_data(chi.spec)$cluster == 5)
+speciesDF = as.data.frame(cbind((otu_table(psC1, taxa_are_rows = FALSE)), tax_table(psC1)))
+speciesDF$Species <- gsub(";", NA, speciesDF$Species)
+speciesDF <- speciesDF %>% drop_na(Species) #Go from 6709 --> 6162 rows
+row.names(speciesDF) <-  speciesDF$Species 
+speciesDF$Kingdom = NULL
+speciesDF$Phylum=NULL
+speciesDF$Class=NULL
+speciesDF$Order=NULL
+speciesDF$Family=NULL
+speciesDF$Genus=NULL
+speciesDF$Species = NULL
+speciesDF = mutate_all(speciesDF, function(x) as.numeric(as.character(x)))
+speciesDF$C1 = rowMeans(speciesDF)
+AvgDF5 = speciesDF$C1
+
+#Now combine all your row means and pull out the 10 most common species for consistency with our other species barplots
+AvgDF = cbind(AvgDF1, AvgDF2, AvgDF3, AvgDF4, AvgDF5) %>%
+  data.frame(.)
+rownames(AvgDF) = rownames(speciesDF)
+AvgDF$Avg = rowMeans(AvgDF)
+
+#taking the 10 most common based on the averages across profiles
+fig = top_n(AvgDF, 10, Avg) 
+Other = 1 - colSums(fig)
+fig = rbind(fig, Other)
+rownames(fig)[rownames(fig) == "11"] <- "Other"
+fig$tax = rownames(fig)
+
+fig = dplyr::select(fig, -Avg) %>%
+  dplyr::rename('1' = AvgDF1,
+                '2' = AvgDF2,
+                '3' = AvgDF3,
+                '4' = AvgDF4,
+                '5' = AvgDF5)
+
+library(reshape2)
+f = melt(fig) 
+
+f$tax = factor(f$tax, levels=c("Corynebacterium accolens", "Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum","Haemophilus influenzae","Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", "Staphylococcus aureus","Streptococcus pneumoniae","Other"))
+
+#rename tax so it looks nicer in the table legend
+colnames(f)[colnames(f) == "tax"] <- "Species"
+
+subject_plot3 <- ggplot(f[order(f$Species, decreasing = TRUE),], aes(x=variable, y=value, fill=Species)) + 
+  geom_bar(stat="identity", position="fill") + theme_classic() + 
+  theme(legend.position="right", 
+  legend.text=element_text(size=10, face="italic"),
+  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_text(size=12), axis.text.x = element_text(size=10, vjust = 1, hjust = 1, colour = "black")) + 
+  scale_fill_manual(values = chisp2) +
+  # scale_x_discrete(labels=c("No", "Yes")) +
+  xlab("Microbiome profile") + ylab("Mean relative abundance") 
+
+#save for ease of review; if you include in manuscript, will need to save as an eps file (sample code below)
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/cluster_rel_abund.png",
+    width = 12, height = 9, units = 'in', res = 600)
+subject_plot3
+dev.off()
+
+#NOW: use cowplot to combine our PCoA plot and composition bar plot into one figure
+fig5 <- plot_grid(clust, subject_plot3, labels = c('A', 'B'), align = "h", axis = "b", label_size = 12, rel_widths = c(1, 1.5))
+fig5
+
+#save as .eps file to comply with Lancet Microbe requirements
+ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig5_clust.eps", width = 11, height = 3.5, units = "in")
+fig5
+dev.off()
+```
+
+What do our clusters look like by immune status among CLWH?
+
+```{r}
+
+
+```
+
 
 ```{r}
 # Create dataframes with overall relative abundances of phyla and genera
@@ -927,6 +1464,7 @@ phyla_abundances$x <- (phyla_abundances$x)/(nsamples(chi.rel))
 names(phyla_abundances)[names(phyla_abundances) == 'x'] <- 'phyla_Ab'
 sum(phyla_abundances$phyla_Ab)    # Should sum to 1 (sum of relative abundances of phyla)
 nrow(phyla_abundances)            # Corresponds to # of unique phyla: 116
+
 melted_df$Genus <- as.character(melted_df$Genus)
 genus_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,
                                                            OTU=melted_df$OTU), FUN=mean)
@@ -982,6 +1520,61 @@ sum(relative_df$Abundance)#sums to 143.0008; n=143 so tracks?
 table(relative_df$Species) #We have 11 levels for the Species variable, which are consistent with our top 10 + other
 
 ```
+
+####DETOUR: Assessing correlation between D. pigrum and S. pyogenes for Matt (will not be included in paper, delete from final RMD file that goes on GitHub)
+
+- will use our "relative_df" dataframe that has abundances for all 6708 species identified and pull out D. pigrum and S. pyogenes
+
+```{r}
+###NOT WORKING; come back to 
+gas <- filter(relative_df, Species == "Streptococcus pyogenes")
+dpig <- filter(relative_df, Species == "Dolosigranulum pigrum")
+
+#drop all but species name and species abundance, rename the abundance variables for each, and then merge into 1 dataframe
+gas <- rename(gas, ab.gas = Abundance)
+dpig <- rename(dpig, ab.dpig = Abundance)
+
+
+#Create simple dataframe with abundance variables and sample_id, hiv, age, and merge on sample_id
+corr_mk <- dpig[c("sample_id", "age", "hiv", "ab.dpig")]
+test <- gas[c("sample_id", "ab.gas")]
+corr_mk <- merge(corr_mk, test, by ="sample_id", sort = TRUE)
+
+write.csv(corr_mk, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/corr_gas_dpig_forMK.csv", row.names = F)
+corr_mk <- read.csv("corr_gas_dpig_forMK.csv")
+
+cor.test(corr_mk$ab.dpig, corr_mk$ab.gas, method = "pearson")  #P=0.13, cor = -0.127
+cor.test(corr_mk$ab.dpig, corr_mk$ab.gas, method = "spearman", exact = FALSE)  #P=0.35, estimate = -0.079
+#no correlation BUT large number of zeros for GAS so may be down to sample size
+
+library(ggtext)
+
+mk <- ggplot(data = corr_mk, aes(x = ab.dpig, y = ab.gas)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", color="red", size=0.5, se = FALSE) +
+  labs(title="*D. pigrum* vs *S. pyogenes*",x="*D. pigrum*", y = "*S. pyogenes*")+
+  geom_text(size=6, x=0.4, y=0.003, label="r = - 0.08, p = 0.35") +
+  scale_x_continuous(breaks = seq(-0.1, 0.7, 0.2), limits = c(0, 0.7)) +
+  theme_bw() +
+  theme(
+    plot.title = ggtext::element_markdown(size=14, hjust=0.5),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    legend.position = "right",
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 14),
+    axis.title.x = ggtext::element_markdown(),
+    axis.title.y = ggtext::element_markdown())
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/corr_forMK.png",
+     width = 5, height = 5, units = 'in', res = 600)
+mk
+dev.off()
+
+```
+
+
+
 
 ####HEU-CLWH Sibling Comparisons
 
