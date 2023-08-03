@@ -1128,10 +1128,10 @@ fig_barclust
 ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/barclust_combined.eps", width = 9, height = 5, units = "in")
 fig_barclust
 dev.off()
-
 ```
 
-- Statistical testing of demographic variables by biotype (as done in CID paper); will use same variables as used in Table 1 (plus HIV)
+- Statistical testing of demographic variables by biotype (as done in CID paper); will use same variables as used in Table 1 (plus HIV). Included in Table (table # TBD for manuscript, likely supplemental)
+
 ```{r}
 #Age
 tapply(sampleDF$age, sampleDF$cluster, summary)
@@ -1267,6 +1267,69 @@ table(sampleDF$abx, sampleDF$clust15)
 prop.table(table(sampleDF$abx, sampleDF$clust15), 2)
 summary(table(sampleDF$abx, sampleDF$clust15)) #P = 0.008
 ```
+
+- Multivariable analyses of associations between clinical variables and microbiome profiles.
+
+A priori, we would expect antibiotic exposure and URI sx to associate with both HIV and microbiome composition (even though we do not see this in our demographics table). Wood smoke shouldn't be affected by HIV status (except potentially as proxy for low SES --> less access to healthcare but this is a bit of a stretch as 61% of our study participants were exposed to wood smoke). Thus, we will adjust for age, abx exposure, and URI sx when looking for associations between HIV and microbiome profile. We need binary outcomes for multivariable logistic regression, so will look at cluster 2 yes/no and clusters 1/5 yes/no by HIV status. Can also look at clusters using multinomial logistic regression? Run and confirm with MK. 
+
+```{r}
+#Need to create binary 0/1 variables for cluster 2 and cluster 1/5 vars
+
+sampleDF$clust2b <- NA
+sampleDF$clust2b [sampleDF$clust2 == "SP-HI"] <- 1
+sampleDF$clust2b [sampleDF$clust2 == "Other"] <- 0
+table(sampleDF$clust2b)
+
+sampleDF$clust15b <- NA
+sampleDF$clust15b [sampleDF$clust15 == "C-D"] <- 1
+sampleDF$clust15b [sampleDF$clust15 == "Other"] <- 0
+table(sampleDF$clust15b)
+
+sampleDF$hiv <- as.factor(sampleDF$hiv)
+sampleDF$hiv <- relevel(sampleDF$hiv, ref = "Unexposed")
+
+sampleDF$abx <- as.factor(sampleDF$abx)
+sampleDF$abx <- relevel(sampleDF$abx, ref = "No")
+
+sampleDF$uri_rec2 <- as.factor(sampleDF$uri_rec2)
+sampleDF$uri_rec2 <- relevel(sampleDF$uri_rec2, ref = "No")
+
+summary(mylogit <- glm(clust2b ~ hiv + age + abx + uri_rec2, data = sampleDF, family = "binomial")) #significant assoc b/w cluster 2 and HIV infection
+
+#we adjust all other analyses for season and wood smoke exposure as well, so for uniformity will do here: 
+class(sampleDF$wood2)
+sampleDF$wood2 <- relevel(sampleDF$wood2, ref = "No")
+
+sampleDF$season <- as.factor(sampleDF$season)
+sampleDF$season <- relevel(sampleDF$season, ref = "Dry")
+
+summary(mylogit <- glm(clust2b ~ hiv + age + abx + uri_rec2 + season + wood2, data = sampleDF, family = "binomial")) #significant assoc remains b/w cluster 2 and HIV infection
+exp(mylogit$coefficients) #OR (95% CI) for CLWH: 5.31 (1.66, 20.75)
+exp(confint(mylogit))
+
+###MULTINOMIAL LOGISTIC REGRESSION###
+#To look at association b/w HIV and all clusters (unlikely to show anything given small n but we will try)
+#Using code from our PCV-13 serotype analysis published in PLOS One in 2021
+library(nnet)
+sampleDF$cluster <- relevel(sampleDF$cluster, ref = "1")
+summary(test1 <- multinom(cluster ~ hiv + age, data = sampleDF))
+z1 <- summary(test1)$coefficients/summary(test1)$standard.errors
+z1
+#Calculate p-values using Wald tests (here z-tests).
+#2-tailed z test
+p1 <- (1 - pnorm(abs(z1), 0, 1)) * 2
+p1 #HIV infection a/w cluster 2 (p=0.017) and age a/w cluster 3 (p=0.007)
+
+#The exponentiated regression coefficients are relative risk ratios for a unit change in the predictor variable
+## extract the coefficients from the model and exponentiate
+exp(coef(test1))
+#Obtaining 95% CI for our RR
+exp(confint(test1))
+```
+*Summary of multivariable analysis*
+**In a multivariable logistic regression model adjusting for all covariables specified in our methods with presence/absence of cluster 2 as the outcome of interest, HIV infection was associated with presence of cluster 2 (S. pneumo - H. flu); OR (95% CI): 5.31 (1.66, 20.75).**
+
+**In multinomial logistic regression model with cluster membership as the outcome, cluster 1 set as the reference, and HIV status and age as covariables, HIV was significantly associated with the presence of cluster 2; relative risk ratio (95% CI) 5.10 (1.34, 19.36) ; p=0.017. Age was significantly associated with the presence of cluster 3; relative risk ratio (95% CI) 0.94 (0.90, 0.98) ; p=0.007.**
 
 - Microbiome factors: did alpha diversity differ by cluster? What species comprised each cluster?
 
@@ -1450,9 +1513,119 @@ dev.off()
 
 What do our clusters look like by immune status among CLWH?
 
+To answer this, we will subset CLWH from our chi.spec pseq object and repeat the clustering process. 
+
 ```{r}
+hiv.spec = subset_samples(chi.spec, hiv == "Infected")
 
+DistType = t(as.data.frame(vegan_otu(hiv.spec)))
 
+data.dist = vegdist(vegan_otu(hiv.spec), method = "bray")
+
+pam.clustering=function(x,k) { # x is a distance matrix and k the number of clusters
+                         require(cluster)
+                         cluster = as.vector(pam(as.dist(x), k, diss=TRUE)$clustering)
+                         return(cluster)
+                        }
+
+#See how many clusters is ideal (range from 1 to 20)
+
+nclusters=NULL
+library(clusterSim)
+for (k in 1:20) { 
+		if (k==1) {
+			nclusters[k]=NA 
+		} else {
+			data.cluster_temp=pam.clustering(data.dist, k)
+			nclusters[k]=index.G1(t(DistType), data.cluster_temp,  d = data.dist,
+			centrotypes = "medoids")
+		}
+	}
+```
+
+**Stop after this plot and see how many clusters you have**
+```{r}
+plot(nclusters, type="h", xlab="k clusters", ylab="CH index")
+
+#8 seems to be the ideal number for CLWH (though the CH index values are notably lower than for our overall dataset)
+```
+
+```{r}
+#Set new number of clusters = to k based on above plot; we'll use 8
+data.cluster=pam.clustering(data.dist, k=8)
+
+nclusters = index.G1(t(DistType), data.cluster, d = data.dist, centrotypes = "medoids")
+
+#look at number to see if it is highest average (or could change mean to median) <- note from Alex; not sure how to interpret
+obs.silhouette=mean(silhouette(data.cluster, data.dist)[,3])  #where does the 3 come from?
+obs.silhouette=median(silhouette(data.cluster, data.dist)[,3])
+  #tutorial on silhouette: https://stat.ethz.ch/R-manual/R-devel/library/cluster/html/silhouette.html
+test <- silhouette(data.cluster, data.dist)
+summary(test)
+
+library(ade4)
+obs.pcoa=dudi.pco(data.dist, scannf=F, nf=3)
+  #Get warning for non euclidean distance; we intentionally used non-transformed data and bray-curtis (not euclidean) measures, so not unexpected
+
+#reading about dudi.pco: scannf = TRUE should give you a bar plot of eigenvalues; if FALSE, then nf = number of axes to be kept
+  #how do we know that 3 axes is the right number? 
+# obs.pcoa=dudi.pco(data.dist, scannf=T) #if using scannf=T, you have to specify the number of axes no matter what
+#https://pbil.univ-lyon1.fr/R/pdf/course2.pdf --> tutorial on picking the number of axes using our obs.pcoa
+  #also walks you through eigenvalues
+obs.pcoa$eig
+sum(obs.pcoa$eig) #0.33
+barplot(obs.pcoa$eig)
+(kip <- 100 * obs.pcoa$eig/sum(obs.pcoa$eig))
+cumsum(kip) #viewing the data in a 3d space extracts 48% of the info; we'd have to view in 19 axes to see 99% of the contained information. On the other hand, Alex's PC% were relatively small and the whole point of these plots is dimension reduction. Can d/w MK; do we need to re-do with a higher number of axes?
+
+s.class(obs.pcoa$li, fac=as.factor(data.cluster), grid=T,  col = c(1:8))
+  #gives you a cool figure!
+
+p = cbind(obs.pcoa$li,data.cluster)
+
+p$data.cluster = as.factor(p$data.cluster)
+
+library(RColorBrewer)
+library(scales)
+chisp2 <- c("#293352", "#800000FF", "#767676FF", "#FFA319FF", "#8A9045FF", "#155F83FF", "#C16622FF", "#4D004B", "#8F3931FF", "#58593FFF", "#350E20FF")
+show_col(chisp2)
+#made chisp3 and chisp4 above, both with 5 colors, so here we will make chisp5 with 8 colors
+chisp5 <- c("#293352", "#800000FF", "#767676FF", "#FFA319FF", "#8A9045FF", "#155F83FF", "#C16622FF", "#4D004B")
+show_col(chisp5)
+
+library(ggpubr)
+clust_clwh <- ggplot(data = p, aes(x = A1, y = A2)) +
+  geom_point(data = p, aes(color = data.cluster), alpha=1, size=1.0) + 
+  scale_color_manual(values = chisp5) +
+  theme_classic() +
+    theme(
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12))+
+  stat_ellipse(aes(color = data.cluster)) +
+  stat_stars(aes(color = data.cluster), show.legend = T) +
+  # xlab("PC1 (22.6%)") +
+  # ylab("PC2 (17.3%)") +
+  labs(color = "Microbiome Profile")+ 
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1))
+
+clust_clwh
+
+###STOPPED HERE 8/3/23
+
+#Question: how to tell PC %? Standard axes are A1 and A2 instead of PC% and PC% --> created a pcoa plot by cluster below and used those PC%; make sure this is ok
+
+#save for ease of review; once you figure out how to update the axes accurately and finalize the figure, will need to save as an eps file (sample code below)
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clust_v2.png",
+    width = 12, height = 9, units = 'in', res = 600)
+clust
+dev.off()
+
+# #save as .eps file to comply with Lancet Microbe requirements
+# ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clust.eps", width = 7, height = 3.5, units = "in")
+# clust
+# dev.off()
 ```
 
 
