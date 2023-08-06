@@ -1611,23 +1611,543 @@ clust_clwh <- ggplot(data = p, aes(x = A1, y = A2)) +
   scale_y_continuous(labels = scales::number_format(accuracy = 0.1))
 
 clust_clwh
-
-###STOPPED HERE 8/3/23
+#even though 8 had the highest C-H index, one of the clusters (#7) has 1 specimen and one (#8) has 3, so not able to draw ellipses around them. Seems not ideal; we can save this and then repeat with 6 clusters; the second highest C-H index is >8, but with only 44 kids this is also not going to be ideal, so will go with the a number <8 with the second highest C-H index (and 6 and 7 look equivalent on graph above)
 
 #Question: how to tell PC %? Standard axes are A1 and A2 instead of PC% and PC% --> created a pcoa plot by cluster below and used those PC%; make sure this is ok
 
 #save for ease of review; once you figure out how to update the axes accurately and finalize the figure, will need to save as an eps file (sample code below)
-png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clust_v2.png",
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clwh_clust8.png",
     width = 12, height = 9, units = 'in', res = 600)
-clust
+clust_clwh
 dev.off()
 
 # #save as .eps file to comply with Lancet Microbe requirements
 # ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clust.eps", width = 7, height = 3.5, units = "in")
 # clust
 # dev.off()
+
+###NOW WITH 6 CLUSTERS###
+#Set new number of clusters = to k based on above plot; we'll use 6
+data.cluster=pam.clustering(data.dist, k=6)
+
+nclusters = index.G1(t(DistType), data.cluster, d = data.dist, centrotypes = "medoids")
+
+obs.silhouette=mean(silhouette(data.cluster, data.dist)[,3])  #where does the 3 come from?
+obs.silhouette=median(silhouette(data.cluster, data.dist)[,3])
+  #tutorial on silhouette: https://stat.ethz.ch/R-manual/R-devel/library/cluster/html/silhouette.html
+test <- silhouette(data.cluster, data.dist)
+summary(test)
+
+library(ade4)
+obs.pcoa=dudi.pco(data.dist, scannf=F, nf=3)
+  #Get warning for non euclidean distance; we intentionally used non-transformed data and bray-curtis (not euclidean) measures, so not unexpected
+
+#reading about dudi.pco: scannf = TRUE should give you a bar plot of eigenvalues; if FALSE, then nf = number of axes to be kept
+  #how do we know that 3 axes is the right number? 
+# obs.pcoa=dudi.pco(data.dist, scannf=T) #if using scannf=T, you have to specify the number of axes no matter what
+#https://pbil.univ-lyon1.fr/R/pdf/course2.pdf --> tutorial on picking the number of axes using our obs.pcoa
+  #also walks you through eigenvalues
+obs.pcoa$eig
+sum(obs.pcoa$eig) #0.33
+barplot(obs.pcoa$eig)
+(kip <- 100 * obs.pcoa$eig/sum(obs.pcoa$eig))
+cumsum(kip) #viewing the data in a 3d space extracts 48% of the info; we'd have to view in 19 axes to see 99% of the contained information. On the other hand, Alex's PC% were relatively small and the whole point of these plots is dimension reduction. Can d/w MK; do we need to re-do with a higher number of axes?
+
+s.class(obs.pcoa$li, fac=as.factor(data.cluster), grid=T,  col = c(1:6))
+  #gives you a cool figure!
+
+p = cbind(obs.pcoa$li,data.cluster)
+
+p$data.cluster = as.factor(p$data.cluster)
+
+library(RColorBrewer)
+library(scales)
+chisp2 <- c("#293352", "#800000FF", "#767676FF", "#FFA319FF", "#8A9045FF", "#155F83FF", "#C16622FF", "#4D004B", "#8F3931FF", "#58593FFF", "#350E20FF")
+show_col(chisp2)
+#made chisp3 and chisp4 with 5 colors and chisp5 with 8 colors, so now we'll do chisp6 with 6 colors
+chisp6 <- c("#155F83FF", "#8F3931FF", "#FFA319FF", "#8A9045FF", "#C16622FF", "#767676FF")
+show_col(chisp6)
+
+library(ggpubr)
+clust_clwh <- ggplot(data = p, aes(x = A1, y = A2)) +
+  geom_point(data = p, aes(color = data.cluster), alpha=1, size=1.0) + 
+  scale_color_manual(values = chisp5) +
+  theme_classic() +
+    theme(
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12))+
+  stat_ellipse(aes(color = data.cluster)) +
+  stat_stars(aes(color = data.cluster), show.legend = T) +
+  # xlab("PC1 (22.6%)") +
+  # ylab("PC2 (17.3%)") +
+  labs(color = "Microbiome Profile")+ 
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1))
+
+clust_clwh
+#now have 1 group where ellipse not possible (group 6); not sure how good this clustering is, but we'll proceed with further analyses
+
+#save for ease of review; once you figure out how to update the axes accurately and finalize the figure, will need to save as an eps file (sample code below)
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clwh_clust6.png",
+    width = 12, height = 9, units = 'in', res = 600)
+clust_clwh
+dev.off()
 ```
 
+- next, we will add the cluster info as a variable into our metadata, and generate our relevant HIV-specific variables
+
+```{r}
+#Add cluster to metadata file as a variable
+sample_data(hiv.spec)$cluster = as.factor(data.cluster)
+
+sampleDF = sample_data(hiv.spec) %>%
+  data.frame(.)
+
+#Now create variables for viral load and CD4
+chi_hiv <- sampleDF #so we can use our original code for variable creation
+#I want the most recent viral load values for my analysis. Will try creating a new variable to ID which value is more recent first:
+#missing 3 vl1 and 14vl2's
+chi_hiv$newest_vL <- NA
+chi_hiv$newest_vL [chi_hiv$child_vl1_weeks < chi_hiv$child_vl2_weeks] <- 1
+chi_hiv$newest_vL [chi_hiv$child_vl2_weeks < chi_hiv$child_vl1_weeks] <- 2
+chi_hiv$newest_vL [chi_hiv$child_vl2_weeks < 0] <- 1  #we want to include the viral loads collected BEFORE enrollment where possible
+chi_hiv$newest_vL [is.na(chi_hiv$child_vl_2)] <- 1    #if we are missing vl_2, we will use vl_1
+chi_hiv$newest_vL [is.na(chi_hiv$child_vl_1) & is.na(chi_hiv$child_vl_2)] <- NA
+table(chi_hiv$newest_vL)
+
+#Next, can we pull the viral load that was most recent using our newest_vL variable?
+  #source: https://stackoverflow.com/questions/67944727/creating-new-variable-by-selecting-column-based-on-value-of-another-column
+  #Need to do this with rows that have values (aka need to exclude the NA viral load children for this to work)
+#For future phyloseq analyses: will need to remove B-04, B-07, B-52
+chi_viral <- subset(chi_hiv, !is.na(newest_vL))
+chi_viral$Var1 <- chi_viral$child_vl_1
+chi_viral$Var2 <- chi_viral$child_vl_2
+
+chi_viral <- chi_viral %>% rowwise() %>%
+  mutate(newest_vlnum = get(paste0('Var', newest_vL)))
+#now we have a dataframe of the 41 children with viral load measurements and 1 column containing the most recent viral loads for each
+summary(chi_viral$newest_vlnum)
+table(chi_viral$newest_vlnum) #27 with viral suppression, 14 without viral suppression
+
+#make new variable for viral suppression or not, with vL < 400 = suppressed
+chi_viral$vl_suppr <- NA
+chi_viral$vl_suppr [chi_viral$newest_vlnum < 400] <- "1"
+chi_viral$vl_suppr [chi_viral$newest_vlnum >= 400] <- "0"
+table(chi_viral$vl_suppr)
+
+#REPEAT the above steps to get date associated with most recent viral load, most recent CD4, and date a/w most recent CD4
+#Viral load collection date
+chi_viral$Var1 <- chi_viral$child_vl1_weeks
+chi_viral$Var2 <- chi_viral$child_vl2_weeks
+
+chi_viral <- chi_viral %>% rowwise() %>%
+  mutate(newest_vldate = get(paste0('Var', newest_vL)))   #now have info for when vL were checked in relation to enrollment
+
+summary(chi_viral$newest_vldate)
+
+chi_viral <- within(chi_viral, rm(Var1, Var2))
+
+#CD4
+  #missing CD4 data for B-45 and B-52
+  #will focus on percentages since this is what is presented for kids
+chi_hiv$newest_cd4 <- NA
+chi_hiv$newest_cd4 [chi_hiv$chi_cd4_weeks1 < chi_hiv$chi_cd4_weeks2] <- 1
+chi_hiv$newest_cd4 [chi_hiv$chi_cd4_weeks2 < chi_hiv$chi_cd4_weeks1] <- 2
+chi_hiv$newest_cd4 [chi_hiv$chi_cd4_weeks2 < 0] <- 1  #we want to include the viral loads collected BEFORE enrollment where possible
+chi_hiv$newest_cd4 [is.na(chi_hiv$chi_cd4_perc_2)] <- 1    #if we are missing cd4_2, we will use cd4_1
+chi_hiv$newest_cd4 [is.na(chi_hiv$chi_cd4_perc_1)] <- 2    #one child is missing cd4_1 but has cd4_2
+chi_hiv$newest_cd4 [is.na(chi_hiv$chi_cd4_perc_1) & is.na(chi_hiv$chi_cd4_perc_2)] <- NA
+table(chi_hiv$newest_cd4)
+
+#create new dataframe without B-45 and B-52 (aka new df with children missing CD4 data removed)
+chi_cd4 <- subset(chi_hiv, !is.na(newest_cd4))
+chi_cd4$Var1 <- chi_cd4$chi_cd4_perc_1
+chi_cd4$Var2 <- chi_cd4$chi_cd4_perc_2
+
+chi_cd4 <- chi_cd4 %>% rowwise() %>%
+  mutate(newest_cd4perc = get(paste0('Var', newest_cd4)))
+
+summary(chi_cd4$newest_cd4perc)
+table(chi_cd4$newest_cd4perc)
+
+#make new variable for immune competent CD4 or not, with CD4 percentage >=25% = immune competent
+  #d/w MK re: potentially adding a cutoff at 15% for immunosuppression, but we only have 2 kids with CD4% < 15 so will stay with 25% binary for now
+chi_cd4$cd4nL <- NA
+chi_cd4$cd4nL [chi_cd4$newest_cd4perc >=25] <- "1"
+chi_cd4$cd4nL [chi_cd4$newest_cd4perc < 25] <- "0"
+table(chi_cd4$cd4nL) 
+
+#arvs
+table(chi_hiv$child_arv)
+table(chi_hiv$child_arv_meds)
+
+#save chi_cd4 with 6 clusters as a csv file in case we need to return to it
+write.csv(chi_cd4, '/Users/swetapatel/OneDrive - Duke University/Fogarty coding/metadata_clust_hiv6.csv')
+```
+
+- Do any of our clusters associate with age or HIV-specific covariables (viral suppression, cd4 category, TMP-SMX use, abx use)?
+
+Will create plots first to visually assess for associations.
+
+```{r}
+#do our clusters associate with any of our demographic variables?
+#age by cluster
+a <- ggplot(sampleDF, aes(x=cluster, y=age)) +
+  geom_boxplot(fill=chisp6) +
+  xlab('Cluster') + 
+  ylab('Age (Months)') +
+  theme_classic()
+
+#viral suppression by cluster
+b <- ggplot(chi_viral, aes(fill=vl_suppr, x=cluster)) + geom_bar(stat = "count", position = "fill", width = 0.9) + 
+  scale_fill_manual(values = c('#800000FF','#155F83FF'))+
+  xlab('Cluster')+
+  theme_classic()
+
+#CD4 category by cluster
+c <- ggplot(chi_cd4, aes(fill=cd4nL, x=cluster)) + geom_bar(stat = "count", position = "fill", width = 0.9) + 
+  scale_fill_manual(values = c('#800000FF','#155F83FF'))+
+  xlab('Cluster')+
+  theme_classic()
+
+#TMP-SMX use by cluster
+sampleDF$tmpsmx <- NA
+sampleDF$tmpsmx [sampleDF$child_tmpsmx == 1] <- "Yes"
+sampleDF$tmpsmx[sampleDF$child_tmpsmx == 2] <- "No"
+table(sampleDF$tmpsmx)
+
+d <- ggplot(sampleDF, aes(fill=tmpsmx, x=cluster)) + geom_bar(stat = "count", position = "fill", width = 0.9) + 
+  scale_fill_manual(values = c('#800000FF','#155F83FF'))+
+  xlab('Cluster')+
+  theme_classic()
+
+#abx use by cluster
+e <- ggplot(sampleDF, aes(fill=abx, x=cluster)) + geom_bar(stat = "count", position = "fill", width = 0.9) +
+  scale_fill_manual(values = c('#800000FF','#155F83FF'))+
+  xlab('Cluster')+
+  theme_classic()
+
+#save as an image for reference while we do additional analyses:
+clust_hivcomb <- plot_grid(a,b,c,d,e, labels = "AUTO", nrow = 3, ncol = 2, align = "hv", axis = "b")
+
+clust_hivcomb
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clwh_clust6bar.png",
+    width = 12, height = 9, units = 'in', res = 600)
+clust_hivcomb
+dev.off()
+
+#Visual trends: cluster 3 has the highest number of viremic and immunosuppressed children. Cluster 1 only has virally suppressed children, and cluster 5 only has immunocompetent children. We will check comparisons of 1 vs others, 3 vs others, and 5 vs others. Can also check 2-3 vs others for cd4.
+
+#create these variables (will make binary in anticipation of logistic regression analyses)
+#create in both chi_viral and chi_cd4 dataframes (since we have a different N in each)
+chi_viral$clust1 <- NA
+chi_viral$clust1 [chi_viral$cluster == "1"] <- 1
+chi_viral$clust1[chi_viral$cluster != "1"] <- 0
+table(chi_viral$clust1)
+
+chi_viral$clust3 <- NA
+chi_viral$clust3 [chi_viral$cluster == "3"] <- 1
+chi_viral$clust3[chi_viral$cluster != "3"] <- 0
+table(chi_viral$clust3)
+
+chi_viral$clust5 <- NA
+chi_viral$clust5 [chi_viral$cluster == "5"] <- 1
+chi_viral$clust5[chi_viral$cluster != "5"] <- 0
+table(chi_viral$clust5)
+
+chi_cd4$clust1 <- NA
+chi_cd4$clust1 [chi_cd4$cluster == "1"] <- 1
+chi_cd4$clust1[chi_cd4$cluster != "1"] <- 0
+table(chi_cd4$clust1)
+
+chi_cd4$clust3 <- NA
+chi_cd4$clust3 [chi_cd4$cluster == "3"] <- 1
+chi_cd4$clust3[chi_cd4$cluster != "3"] <- 0
+table(chi_cd4$clust3)
+
+chi_cd4$clust5 <- NA
+chi_cd4$clust5 [chi_cd4$cluster == "5"] <- 1
+chi_cd4$clust5[chi_cd4$cluster != "5"] <- 0
+table(chi_cd4$clust5)
+
+chi_cd4$clust23 <- NA
+chi_cd4$clust23 [chi_cd4$cluster == "2" | chi_cd4$cluster == "3"] <- 1
+chi_cd4$clust23[chi_cd4$cluster == "1" | chi_cd4$cluster == "4" | chi_cd4$cluster == "5" | chi_cd4$cluster == "6"] <- 0
+table(chi_cd4$clust23)
+
+```
+
+Next, statistical testing to identify demographic differences by cluster among CLWH
+
+```{r}
+table(sampleDF$cluster)
+
+###DEMOGRAPHIC DIFFERENCES BY CLUSTER AMONG CLWH
+#Age
+tapply(sampleDF$age, sampleDF$cluster, summary)
+kruskal.test(sampleDF$age, sampleDF$cluster) #p<0.001
+
+#Sex
+table(sampleDF$sex, sampleDF$cluster)
+prop.table(table(sampleDF$sex, sampleDF$cluster), 2)
+fisher.test(sampleDF$sex, sampleDF$cluster)
+
+#TMP-SMX use
+table(sampleDF$tmpsmx, sampleDF$cluster)
+prop.table(table(sampleDF$tmpsmx, sampleDF$cluster), 2)
+fisher.test(sampleDF$tmpsmx, sampleDF$cluster)
+
+#Abx use
+table(sampleDF$abx, sampleDF$cluster)
+prop.table(table(sampleDF$abx, sampleDF$cluster), 2)
+fisher.test(sampleDF$abx, sampleDF$cluster)
+
+#Viral suppression
+table(chi_viral$vl_suppr, chi_viral$cluster)
+prop.table(table(chi_viral$vl_suppr, chi_viral$cluster), 2)
+summary(table(chi_viral$vl_suppr, chi_viral$cluster))
+fisher.test(chi_viral$vl_suppr, chi_viral$cluster)
+
+#CD4 status #p=0.09
+table(chi_cd4$cd4nL, chi_cd4$cluster)
+prop.table(table(chi_cd4$cd4nL, chi_cd4$cluster), 2)
+fisher.test(chi_cd4$cd4nL, chi_cd4$cluster)
+
+#2 group analysis by CD4 and viral suppression status: 
+#viral suppression
+#by cluster 1: p=0.04
+table(chi_viral$vl_suppr, chi_viral$clust1)
+prop.table(table(chi_viral$vl_suppr, chi_viral$clust1), 2)
+fisher.test(chi_viral$vl_suppr, chi_viral$clust1)
+
+#by cluster 3: p = 0.10
+table(chi_viral$vl_suppr, chi_viral$clust3)
+prop.table(table(chi_viral$vl_suppr, chi_viral$clust3), 2)
+fisher.test(chi_viral$vl_suppr, chi_viral$clust3)
+
+#by cluster 5: p=0.67
+table(chi_viral$vl_suppr, chi_viral$clust5)
+prop.table(table(chi_viral$vl_suppr, chi_viral$clust5), 2)
+fisher.test(chi_viral$vl_suppr, chi_viral$clust5)
+
+#low vs normal CD4%
+#by cluster 1: p=0.65
+table(chi_cd4$cd4nL, chi_cd4$clust1)
+prop.table(table(chi_cd4$cd4nL, chi_cd4$clust1), 2)
+fisher.test(chi_cd4$cd4nL, chi_cd4$clust1)
+
+#by cluster 3: p = 0.10
+table(chi_cd4$cd4nL, chi_cd4$clust3)
+prop.table(table(chi_cd4$cd4nL, chi_cd4$clust3), 2)
+fisher.test(chi_cd4$cd4nL, chi_cd4$clust3)
+
+#by cluster 5: p=0.16
+table(chi_cd4$cd4nL, chi_cd4$clust5)
+prop.table(table(chi_cd4$cd4nL, chi_cd4$clust5), 2)
+fisher.test(chi_cd4$cd4nL, chi_cd4$clust5)
+
+#by cluster 2 or 3: p = 0.02
+table(chi_cd4$cd4nL, chi_cd4$clust23)
+prop.table(table(chi_cd4$cd4nL, chi_cd4$clust23), 2)
+fisher.test(chi_cd4$cd4nL, chi_cd4$clust23)
+
+#Will not do any multivariable testing because our sample size is too small
+```
+
+What were the microbiome characteristics of the 6 clusters generated in our sub-analysis of CLWH?
+```{r}
+Shannon = estimate_richness(hiv.spec, measures = "Shannon")%>%
+  cbind(., sampleDF, by = "names") #used Alex's code but this gives you a new dataframe to use called "Shannon"
+
+tapply(Shannon$Shannon, Shannon$cluster, summary)
+kruskal.test(Shannon$Shannon, Shannon$cluster) #P=0.06
+
+shan_hiv <- ggplot(Shannon, aes(x=cluster, y=Shannon, fill=cluster)) + 
+  geom_boxplot() + labs(x="Microbiome profile (CLWH only)", y = "Shannon index")+
+  scale_fill_manual(values=chisp6) +
+  theme_classic() +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.position = "none",
+    legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12))
+
+#save for ease of review; if you include in manuscript, will need to save as an eps file (sample code below)
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SDI_by_clust_hiv.png",
+    width = 12, height = 9, units = 'in', res = 600)
+shan_hiv
+dev.off()
+
+# #save as .eps file to comply with Lancet Microbe requirements
+# ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SDI_by_clust_hiv.eps", width = 7, height = 3.5, units = "in")
+# shan
+# dev.off()
+```
+
+```{r}
+#Cluster composition
+sample_data(hiv.spec)$cluster = as.factor(data.cluster)
+
+psC1 = subset_samples(hiv.spec, sample_data(hiv.spec)$cluster == 1)
+speciesDF = as.data.frame(cbind((otu_table(psC1, taxa_are_rows = FALSE)), tax_table(psC1)))
+speciesDF$Species <- gsub(";", NA, speciesDF$Species)
+speciesDF <- speciesDF %>% drop_na(Species) #Go from 6709 --> 6162 rows
+row.names(speciesDF) <-  speciesDF$Species 
+speciesDF$Kingdom = NULL
+speciesDF$Phylum=NULL
+speciesDF$Class=NULL
+speciesDF$Order=NULL
+speciesDF$Family=NULL
+speciesDF$Genus=NULL
+speciesDF$Species = NULL
+speciesDF = mutate_all(speciesDF, function(x) as.numeric(as.character(x)))
+speciesDF$C1 = rowMeans(speciesDF)
+AvgDF1 = speciesDF$C1
+
+#now repeat this process for clusters 2-6, saving AvgDF2-6 in the process so we can bind them all together at the end
+
+psC1 = subset_samples(hiv.spec, sample_data(hiv.spec)$cluster == 2)
+speciesDF = as.data.frame(cbind((otu_table(psC1, taxa_are_rows = FALSE)), tax_table(psC1)))
+speciesDF$Species <- gsub(";", NA, speciesDF$Species)
+speciesDF <- speciesDF %>% drop_na(Species) #Go from 6709 --> 6162 rows
+row.names(speciesDF) <-  speciesDF$Species 
+speciesDF$Kingdom = NULL
+speciesDF$Phylum=NULL
+speciesDF$Class=NULL
+speciesDF$Order=NULL
+speciesDF$Family=NULL
+speciesDF$Genus=NULL
+speciesDF$Species = NULL
+speciesDF = mutate_all(speciesDF, function(x) as.numeric(as.character(x)))
+speciesDF$C1 = rowMeans(speciesDF)
+AvgDF2 = speciesDF$C1
+
+psC1 = subset_samples(hiv.spec, sample_data(hiv.spec)$cluster == 3)
+speciesDF = as.data.frame(cbind((otu_table(psC1, taxa_are_rows = FALSE)), tax_table(psC1)))
+speciesDF$Species <- gsub(";", NA, speciesDF$Species)
+speciesDF <- speciesDF %>% drop_na(Species) #Go from 6709 --> 6162 rows
+row.names(speciesDF) <-  speciesDF$Species 
+speciesDF$Kingdom = NULL
+speciesDF$Phylum=NULL
+speciesDF$Class=NULL
+speciesDF$Order=NULL
+speciesDF$Family=NULL
+speciesDF$Genus=NULL
+speciesDF$Species = NULL
+speciesDF = mutate_all(speciesDF, function(x) as.numeric(as.character(x)))
+speciesDF$C1 = rowMeans(speciesDF)
+AvgDF3 = speciesDF$C1
+
+psC1 = subset_samples(hiv.spec, sample_data(hiv.spec)$cluster == 4)
+speciesDF = as.data.frame(cbind((otu_table(psC1, taxa_are_rows = FALSE)), tax_table(psC1)))
+speciesDF$Species <- gsub(";", NA, speciesDF$Species)
+speciesDF <- speciesDF %>% drop_na(Species) #Go from 6709 --> 6162 rows
+row.names(speciesDF) <-  speciesDF$Species 
+speciesDF$Kingdom = NULL
+speciesDF$Phylum=NULL
+speciesDF$Class=NULL
+speciesDF$Order=NULL
+speciesDF$Family=NULL
+speciesDF$Genus=NULL
+speciesDF$Species = NULL
+speciesDF = mutate_all(speciesDF, function(x) as.numeric(as.character(x)))
+speciesDF$C1 = rowMeans(speciesDF)
+AvgDF4 = speciesDF$C1
+
+psC1 = subset_samples(hiv.spec, sample_data(hiv.spec)$cluster == 5)
+speciesDF = as.data.frame(cbind((otu_table(psC1, taxa_are_rows = FALSE)), tax_table(psC1)))
+speciesDF$Species <- gsub(";", NA, speciesDF$Species)
+speciesDF <- speciesDF %>% drop_na(Species) #Go from 6709 --> 6162 rows
+row.names(speciesDF) <-  speciesDF$Species 
+speciesDF$Kingdom = NULL
+speciesDF$Phylum=NULL
+speciesDF$Class=NULL
+speciesDF$Order=NULL
+speciesDF$Family=NULL
+speciesDF$Genus=NULL
+speciesDF$Species = NULL
+speciesDF = mutate_all(speciesDF, function(x) as.numeric(as.character(x)))
+speciesDF$C1 = rowMeans(speciesDF)
+AvgDF5 = speciesDF$C1
+
+psC1 = subset_samples(hiv.spec, sample_data(hiv.spec)$cluster == 6)
+speciesDF = as.data.frame(cbind((otu_table(psC1, taxa_are_rows = FALSE)), tax_table(psC1)))
+speciesDF$Species <- gsub(";", NA, speciesDF$Species)
+speciesDF <- speciesDF %>% drop_na(Species) #Go from 6709 --> 6162 rows
+row.names(speciesDF) <-  speciesDF$Species 
+speciesDF$Kingdom = NULL
+speciesDF$Phylum=NULL
+speciesDF$Class=NULL
+speciesDF$Order=NULL
+speciesDF$Family=NULL
+speciesDF$Genus=NULL
+speciesDF$Species = NULL
+speciesDF = mutate_all(speciesDF, function(x) as.numeric(as.character(x)))
+speciesDF$C1 = rowMeans(speciesDF)
+AvgDF6 = speciesDF$C1
+
+#Now combine all your row means and pull out the 10 most common species for consistency with our other species barplots
+AvgDF = cbind(AvgDF1, AvgDF2, AvgDF3, AvgDF4, AvgDF5, AvgDF6) %>%
+  data.frame(.)
+rownames(AvgDF) = rownames(speciesDF)
+AvgDF$Avg = rowMeans(AvgDF)
+
+#taking the 10 most common based on the averages across profiles
+fig = top_n(AvgDF, 10, Avg) 
+Other = 1 - colSums(fig)
+fig = rbind(fig, Other)
+rownames(fig)[rownames(fig) == "11"] <- "Other"
+fig$tax = rownames(fig)
+
+fig = dplyr::select(fig, -Avg) %>%
+  dplyr::rename('1' = AvgDF1,
+                '2' = AvgDF2,
+                '3' = AvgDF3,
+                '4' = AvgDF4,
+                '5' = AvgDF5,
+                '6' = AvgDF6)
+
+library(reshape2)
+f = melt(fig) 
+
+f$tax = factor(f$tax, levels=c("Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum","Haemophilus influenzae","Micrococcus luteus", "Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", "Staphylococcus aureus","Streptococcus pneumoniae","Other"))
+
+#rename tax so it looks nicer in the table legend
+colnames(f)[colnames(f) == "tax"] <- "Species"
+
+subject_plot4 <- ggplot(f[order(f$Species, decreasing = TRUE),], aes(x=variable, y=value, fill=Species)) + 
+  geom_bar(stat="identity", position="fill") + theme_classic() + 
+  theme(legend.position="right", 
+  legend.text=element_text(size=10, face="italic"),
+  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_text(size=12), axis.text.x = element_text(size=10, vjust = 1, hjust = 1, colour = "black")) + 
+  scale_fill_manual(values = chisp2) +
+  # scale_x_discrete(labels=c("No", "Yes")) +
+  xlab("Microbiome profile") + ylab("Mean relative abundance") 
+
+subject_plot4
+
+#save for ease of review; if you include in manuscript, will need to save as an eps file (sample code below)
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/cluster_rel_abund_hiv.png",
+    width = 12, height = 9, units = 'in', res = 600)
+subject_plot4
+dev.off()
+
+#cluster 1: 64% Coryne + D.pig; cluster 5 = 69% Coryne + D.pig
+
+#NOW: use cowplot to combine our PCoA plot and composition bar plot into one figure
+fig6 <- plot_grid(clust_clwh, subject_plot4, labels = c('A', 'B'), align = "h", axis = "b", label_size = 12, rel_widths = c(1, 1.5))
+fig6
+
+#save as .eps file to comply with Lancet Microbe requirements
+ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig6_clust_hiv.eps", width = 11, height = 3.5, units = "in")
+fig6
+dev.off()
+```
 
 ```{r}
 # Create dataframes with overall relative abundances of phyla and genera
