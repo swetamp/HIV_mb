@@ -44,6 +44,8 @@ library(MASS)
 library(Maaslin2)
 library(cowplot)
 library(cluster)
+library(devtools)
+library(SpiecEasi)
 ```
 
 ```{r include=FALSE}
@@ -2148,6 +2150,46 @@ ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig6_cl
 fig6
 dev.off()
 ```
+
+####Co-occurrence plots (aka network analysis) to characterize interspecies interactions/associations 
+
+- Got reviewer request for the following: "I suspect you will have a multiple associations with higher Corynebacterium such as an intact immune system, and a negative association with Staph/Strep (which will be highly associated with CD4+ count). Please see co-occurence plots built with networks of spearman correlations (PMID: 30093571)."
+
+PMID links to a paper by Leo Segal's group: https://erj.ersjournals.com/content/52/4/1800810.long#sec-2.
+Their description of the network correlation methods is as follows: "Co-occurrence between most abundant bacterial genera (>1% relative abundance in at least one sample) were assessed using SparCC [30] with 20 iterations and 500 bootstrap replicates to eliminate correlations where significance was driven by outliers and visualised using Cytoscape v3.0.2 [31]. Only biomarkers that passed false discovery rate correction were used for this analysis [32]."
+- code used in paper: https://github.com/segalmicrobiomelab/ntm_bronchiectasis_microbiome/blob/master/NTM.r --> this does not have any of the correlation network code, which is not helpful.
+
+Found multiple SpiecEasi tutorials: 
+1. https://biovcnet.github.io/_pages/NetworkScience_SparCC.nb.html (helps you run sparcc and generate file that you can plug into cytoscape)
+2. https://mibwurrepo.github.io/Microbial-bioinformatics-introductory-course-Material-2018/inference-of-microbial-ecological-networks.html (looks like you can create your network diagram within R itself)
+
+For consistency, we will use the same filtering criteria that we used for our Maaslin2 analyses and filter taxa with fewer than 50 counts across the dataset.
+
+Note: installing SpiecEasi on a mac was a beast and required the following steps (recording here in case I need to install another package requiring compliation in the future). Took ~2.5h troubleshooting.
+1. Downloaded gfortran from CRAN: https://cran.r-project.org/bin/macosx/tools/
+2. This defaults to storing gfortran in the /opt/ folder in Terminal, but R looks for it in usr/local/; first I tried manually moving gfortran into usr/local using the sudo mv command in Terminal, but this still did not work
+3. Created a Makevars file in the ~/.R folder and then pasted the following text into it, using a combination of these tutorials
+- creating file and adding contents to it in Terminal: https://superuser.com/questions/728800/how-to-create-a-file-and-insert-a-line-in-it-using-os-x-terminal
+- getting R to find gfortran (?I think this is what this code did):
+https://stackoverflow.com/questions/69639782/installing-gfortran-on-macbook-with-apple-m1-chip-for-use-in-r
+- what I added to terminal: 
+Swetas-MacBook-Pro-3:.R swetapatel$ echo "FC = /opt/gfortran/bin/gfortran">> ~/.R/Makevars
+Swetas-MacBook-Pro-3:.R swetapatel$ echo "F77 = /opt/gfortran/bin/gfortran" >> ~/.R/Makevars
+Swetas-MacBook-Pro-3:.R swetapatel$ echo "FLIBS = -L/opt/gfortran/lib/gcc/x86_64-apple-darwin20.0" >> ~/.R/Makevars
+4. Restarted R and installed SpiecEasi using "install_github("zdk123/SpiecEasi")"
+
+
+```{r}
+# chi.filter3 <- filter_taxa(chi_prune, function(Abundance) mean(Abundance)>=50, TRUE)
+# ntaxa(chi.filter3) #43
+# 
+# otu <- as.data.frame(otu_table(chi.filter3, taxa_are_rows=TRUE))
+#need to remove the unidentified species from here: row 11, 25, 37, 38, 40
+  #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp., Nocardioides sp. Root122
+
+```
+
 
 ```{r}
 # Create dataframes with overall relative abundances of phyla and genera
