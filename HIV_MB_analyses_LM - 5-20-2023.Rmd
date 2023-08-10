@@ -1520,8 +1520,9 @@ Will create plots first to visually assess for associations.
 ```{r}
 #do our clusters associate with any of our demographic variables?
 #age by cluster
-a <- ggplot(sampleDF, aes(x=cluster, y=age)) +
-  geom_boxplot(fill=chisp6) +
+chi_hiv$cluster <- as.factor(chi_hiv$cluster)
+a <- ggplot(chi_hiv, aes(x=cluster, y=age)) +
+  geom_boxplot(fill=chisp4) +
   xlab('Cluster') + 
   ylab('Age (Months)') +
   theme_classic()
@@ -1539,18 +1540,18 @@ c <- ggplot(chi_cd4, aes(fill=cd4nL, x=cluster)) + geom_bar(stat = "count", posi
   theme_classic()
 
 #TMP-SMX use by cluster
-sampleDF$tmpsmx <- NA
-sampleDF$tmpsmx [sampleDF$child_tmpsmx == 1] <- "Yes"
-sampleDF$tmpsmx[sampleDF$child_tmpsmx == 2] <- "No"
-table(sampleDF$tmpsmx)
+chi_hiv$tmpsmx <- NA
+chi_hiv$tmpsmx [chi_hiv$child_tmpsmx == 1] <- "Yes"
+chi_hiv$tmpsmx[chi_hiv$child_tmpsmx == 2] <- "No"
+table(chi_hiv$tmpsmx)
 
-d <- ggplot(sampleDF, aes(fill=tmpsmx, x=cluster)) + geom_bar(stat = "count", position = "fill", width = 0.9) + 
+d <- ggplot(chi_hiv, aes(fill=tmpsmx, x=cluster)) + geom_bar(stat = "count", position = "fill", width = 0.9) + 
   scale_fill_manual(values = c('#800000FF','#155F83FF'))+
   xlab('Cluster')+
   theme_classic()
 
 #abx use by cluster
-e <- ggplot(sampleDF, aes(fill=abx, x=cluster)) + geom_bar(stat = "count", position = "fill", width = 0.9) +
+e <- ggplot(chi_hiv, aes(fill=abx, x=cluster)) + geom_bar(stat = "count", position = "fill", width = 0.9) +
   scale_fill_manual(values = c('#800000FF','#155F83FF'))+
   xlab('Cluster')+
   theme_classic()
@@ -1560,12 +1561,12 @@ clust_hivcomb <- plot_grid(a,b,c,d,e, labels = "AUTO", nrow = 3, ncol = 2, align
 
 clust_hivcomb
 
-png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clwh_clust6bar.png",
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clwh_clust5bar.png",
     width = 12, height = 9, units = 'in', res = 600)
 clust_hivcomb
 dev.off()
 
-#Visual trends: cluster 3 has the highest number of viremic and immunosuppressed children. Cluster 1 only has virally suppressed children, and cluster 5 only has immunocompetent children. We will check comparisons of 1 vs others, 3 vs others, and 5 vs others. Can also check 2-3 vs others for cd4.
+#Visual trends: cluster 3 has the highest number of viremic kids. Cluster 5 only has immunocompetent children, and clusters 1 and 4 have the highest number of virally suppressed kids and the second highest number of immunocompetent kids. We will check comparisons of 3 vs others, 1-4 vs others, 2-3 vs others, and 5 vs others. Will also look at 1-5 and 1 only for CD4 since these are our Coryne heavy groups (and 1 has the most C. pseudodiphtheriticum)
 
 #create these variables (will make binary in anticipation of logistic regression analyses)
 #create in both chi_viral and chi_cd4 dataframes (since we have a different N in each)
@@ -1584,6 +1585,21 @@ chi_viral$clust5 [chi_viral$cluster == "5"] <- 1
 chi_viral$clust5[chi_viral$cluster != "5"] <- 0
 table(chi_viral$clust5)
 
+chi_viral$clust23 <- NA
+chi_viral$clust23 [chi_viral$cluster == "2" | chi_viral$cluster == "3"] <- 1
+chi_viral$clust23[chi_viral$cluster == "1" | chi_viral$cluster == "4" | chi_viral$cluster == "5"] <- 0
+table(chi_viral$clust23)
+
+chi_viral$clust14 <- NA
+chi_viral$clust14 [chi_viral$cluster == "1" | chi_viral$cluster == "4"] <- 1
+chi_viral$clust14[chi_viral$cluster == "2" | chi_viral$cluster == "3" | chi_viral$cluster == "5"] <- 0
+table(chi_viral$clust14)
+
+chi_viral$clust15 <- NA
+chi_viral$clust15 [chi_viral$cluster == "1" | chi_viral$cluster == "5"] <- 1
+chi_viral$clust15 [chi_viral$cluster == "2" | chi_viral$cluster == "3" |chi_viral$cluster == "4"] <- 0
+table(chi_viral$clust15)
+
 chi_cd4$clust1 <- NA
 chi_cd4$clust1 [chi_cd4$cluster == "1"] <- 1
 chi_cd4$clust1[chi_cd4$cluster != "1"] <- 0
@@ -1601,40 +1617,48 @@ table(chi_cd4$clust5)
 
 chi_cd4$clust23 <- NA
 chi_cd4$clust23 [chi_cd4$cluster == "2" | chi_cd4$cluster == "3"] <- 1
-chi_cd4$clust23[chi_cd4$cluster == "1" | chi_cd4$cluster == "4" | chi_cd4$cluster == "5" | chi_cd4$cluster == "6"] <- 0
+chi_cd4$clust23[chi_cd4$cluster == "1" | chi_cd4$cluster == "4" | chi_cd4$cluster == "5"] <- 0
 table(chi_cd4$clust23)
 
+chi_cd4$clust14 <- NA
+chi_cd4$clust14 [chi_cd4$cluster == "1" | chi_cd4$cluster == "4"] <- 1
+chi_cd4$clust14[chi_cd4$cluster == "2" | chi_cd4$cluster == "3" | chi_cd4$cluster == "5"] <- 0
+table(chi_cd4$clust14)
+
+chi_cd4$clust15 <- NA
+chi_cd4$clust15 [chi_cd4$cluster == "1" | chi_cd4$cluster == "5"] <- 1
+chi_cd4$clust15 [chi_cd4$cluster == "2" | chi_cd4$cluster == "3" |chi_cd4$cluster == "4"] <- 0
+table(chi_cd4$clust15)
 ```
 
 Next, statistical testing to identify demographic differences by cluster among CLWH
 
 ```{r}
-table(sampleDF$cluster)
+table(chi_hiv$cluster)
 
 ###DEMOGRAPHIC DIFFERENCES BY CLUSTER AMONG CLWH
 #Age
-tapply(sampleDF$age, sampleDF$cluster, summary)
-kruskal.test(sampleDF$age, sampleDF$cluster) #p<0.001
+tapply(chi_hiv$age, chi_hiv$cluster, summary)
+kruskal.test(chi_hiv$age, chi_hiv$cluster) #p=0.16
 
 #Sex
-table(sampleDF$sex, sampleDF$cluster)
-prop.table(table(sampleDF$sex, sampleDF$cluster), 2)
-fisher.test(sampleDF$sex, sampleDF$cluster)
+table(chi_hiv$sex, chi_hiv$cluster)
+prop.table(table(chi_hiv$sex, chi_hiv$cluster), 2)
+fisher.test(chi_hiv$sex, chi_hiv$cluster)
 
 #TMP-SMX use
-table(sampleDF$tmpsmx, sampleDF$cluster)
-prop.table(table(sampleDF$tmpsmx, sampleDF$cluster), 2)
-fisher.test(sampleDF$tmpsmx, sampleDF$cluster)
+table(chi_hiv$tmpsmx, chi_hiv$cluster)
+prop.table(table(chi_hiv$tmpsmx, chi_hiv$cluster), 2)
+fisher.test(chi_hiv$tmpsmx, chi_hiv$cluster)
 
 #Abx use
-table(sampleDF$abx, sampleDF$cluster)
-prop.table(table(sampleDF$abx, sampleDF$cluster), 2)
-fisher.test(sampleDF$abx, sampleDF$cluster)
+table(chi_hiv$abx, chi_hiv$cluster)
+prop.table(table(chi_hiv$abx, chi_hiv$cluster), 2)
+fisher.test(chi_hiv$abx, chi_hiv$cluster)
 
 #Viral suppression
 table(chi_viral$vl_suppr, chi_viral$cluster)
 prop.table(table(chi_viral$vl_suppr, chi_viral$cluster), 2)
-summary(table(chi_viral$vl_suppr, chi_viral$cluster))
 fisher.test(chi_viral$vl_suppr, chi_viral$cluster)
 
 #CD4 status #p=0.09
@@ -1644,38 +1668,58 @@ fisher.test(chi_cd4$cd4nL, chi_cd4$cluster)
 
 #2 group analysis by CD4 and viral suppression status: 
 #viral suppression
-#by cluster 1: p=0.04
+#by cluster 1: p=0.27
 table(chi_viral$vl_suppr, chi_viral$clust1)
 prop.table(table(chi_viral$vl_suppr, chi_viral$clust1), 2)
 fisher.test(chi_viral$vl_suppr, chi_viral$clust1)
 
-#by cluster 3: p = 0.10
+#by clusters 1&4: p = 0.02
+table(chi_viral$vl_suppr, chi_viral$clust14)
+prop.table(table(chi_viral$vl_suppr, chi_viral$clust14), 2)
+fisher.test(chi_viral$vl_suppr, chi_viral$clust14)
+
+#by clusters 1&5: p = 1 (not surprising based on bar plots)
+table(chi_viral$vl_suppr, chi_viral$clust15)
+prop.table(table(chi_viral$vl_suppr, chi_viral$clust15), 2)
+fisher.test(chi_viral$vl_suppr, chi_viral$clust15)
+
+#by cluster 3: p = 0.26
 table(chi_viral$vl_suppr, chi_viral$clust3)
 prop.table(table(chi_viral$vl_suppr, chi_viral$clust3), 2)
 fisher.test(chi_viral$vl_suppr, chi_viral$clust3)
 
-#by cluster 5: p=0.67
+#by cluster 5: p=0.32
 table(chi_viral$vl_suppr, chi_viral$clust5)
 prop.table(table(chi_viral$vl_suppr, chi_viral$clust5), 2)
 fisher.test(chi_viral$vl_suppr, chi_viral$clust5)
 
 #low vs normal CD4%
-#by cluster 1: p=0.65
+#by cluster 1: p=0.25
 table(chi_cd4$cd4nL, chi_cd4$clust1)
 prop.table(table(chi_cd4$cd4nL, chi_cd4$clust1), 2)
 fisher.test(chi_cd4$cd4nL, chi_cd4$clust1)
 
-#by cluster 3: p = 0.10
+#by clusters 1&4: p = 0.08
+table(chi_cd4$cd4nL, chi_cd4$clust14)
+prop.table(table(chi_cd4$cd4nL, chi_cd4$clust14), 2)
+fisher.test(chi_cd4$cd4nL, chi_cd4$clust14)
+
+#by clusters 1&5: p = 0.06
+table(chi_cd4$cd4nL, chi_cd4$clust15)
+prop.table(table(chi_cd4$cd4nL, chi_cd4$clust15), 2)
+fisher.test(chi_cd4$cd4nL, chi_cd4$clust15)
+
+#by cluster 3: p = 0.28
 table(chi_cd4$cd4nL, chi_cd4$clust3)
 prop.table(table(chi_cd4$cd4nL, chi_cd4$clust3), 2)
 fisher.test(chi_cd4$cd4nL, chi_cd4$clust3)
 
-#by cluster 5: p=0.16
+#by cluster 5: p=0.30
 table(chi_cd4$cd4nL, chi_cd4$clust5)
 prop.table(table(chi_cd4$cd4nL, chi_cd4$clust5), 2)
 fisher.test(chi_cd4$cd4nL, chi_cd4$clust5)
 
-#by cluster 2 or 3: p = 0.02
+#by cluster 2 or 3: p = 0.004
 table(chi_cd4$cd4nL, chi_cd4$clust23)
 prop.table(table(chi_cd4$cd4nL, chi_cd4$clust23), 2)
 fisher.test(chi_cd4$cd4nL, chi_cd4$clust23)
@@ -1694,8 +1738,7 @@ Their description of the network correlation methods is as follows: "Co-occurren
 Found multiple SpiecEasi tutorials: 
 1. https://biovcnet.github.io/_pages/NetworkScience_SparCC.nb.html (helps you run sparcc and generate file that you can plug into cytoscape)
 2. https://mibwurrepo.github.io/Microbial-bioinformatics-introductory-course-Material-2018/inference-of-microbial-ecological-networks.html (looks like you can create your network diagram within R itself)
-
-For consistency, we will use the same filtering criteria that we used for our Maaslin2 analyses and filter taxa with fewer than 50 counts across the dataset.
+3. SpiecEasi package github (with newest code, looks like): 
 
 Note: installing SpiecEasi on a mac was a beast and required the following steps (recording here in case I need to install another package requiring compliation in the future). Took ~2.5h troubleshooting.
 1. Downloaded gfortran from CRAN: https://cran.r-project.org/bin/macosx/tools/
@@ -1710,16 +1753,184 @@ Swetas-MacBook-Pro-3:.R swetapatel$ echo "F77 = /opt/gfortran/bin/gfortran" >> ~
 Swetas-MacBook-Pro-3:.R swetapatel$ echo "FLIBS = -L/opt/gfortran/lib/gcc/x86_64-apple-darwin20.0" >> ~/.R/Makevars
 4. Restarted R and installed SpiecEasi using "install_github("zdk123/SpiecEasi")"
 
+**SPIEC EASI**
+- will use counts, not relative abundances (source: https://github.com/zdk123/SpiecEasi/issues/64)
+- will use our chi.prune pseq object (already tax.glom'd by species) and for consistency, we will use the same filtering criteria that we used for our Maaslin2 analyses (filter taxa with fewer than 50 counts across the dataset).
 
 ```{r}
-# chi.filter3 <- filter_taxa(chi_prune, function(Abundance) mean(Abundance)>=50, TRUE)
-# ntaxa(chi.filter3) #43
-# 
-# otu <- as.data.frame(otu_table(chi.filter3, taxa_are_rows=TRUE))
+#Filter and remove unidentified species 
+chi.filter <- filter_taxa(chi_prune, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(chi.filter) #43
+otu <- as.data.frame(otu_table(chi.filter, taxa_are_rows=TRUE))
 #need to remove the unidentified species from here: row 11, 25, 37, 38, 40
   #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
 #corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp., Nocardioides sp. Root122
+otu <- otu[-c(11, 25, 37, 38, 40),]
 
+#already set.seed at the beginning of our R session to 1234
+#Spiec easi package in R has wrappers to work directly with pseq objects, so we will import our new otu table back into chi.filter and give it a shot
+#import updated otutable into pseq object (convert to matrix first) and take a look
+TT <- as.matrix(otu)
+otu2 <- otu_table(TT, taxa_are_rows = TRUE)
+class(otu2)
+otu_table(chi.filter) <- otu2
+#can we test it to see if it worked? 
+test <- as.data.frame(otu_table(chi.filter, taxa_are_rows=TRUE)) #it worked
+remove(TT, test, otu2)
+
+#Spiec Easi
+se.mb.chi1 <- spiec.easi(chi.filter, method='mb', lambda.min.ratio=1e-2, nlambda=20, pulsar.params=list(rep.num=500))
+ig2.mb <- adj2igraph(getRefit(se.mb.chi1), vertex.attr = list(name=taxa_names(chi.filter)))
+test <- plot_network(ig2.mb, chi.filter, type = 'taxa', color="Genus")
+#I made a network! pretty cool. for some reason the left side keeps getting cut off, even with resizing. Saved as screenshot and a file:
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/se_mb.png",
+    width = 12, height = 9, units = 'in', res = 600)
+test
+dev.off()
+
+#We should also see what our networks look like using glasso and sparcc (with the latter used in the Segal paper)
+#glasso
+se.gl.chi1 <- spiec.easi(chi.filter, method='glasso', lambda.min.ratio=1e-2, nlambda=20, pulsar.params=list(rep.num=500))
+ig2.gl <- adj2igraph(getRefit(se.gl.chi1), vertex.attr = list(name=taxa_names(chi.filter)))
+plot_network(ig2.gl, chi.filter, type = 'taxa', color="Genus") #screenshotted again
+
+#sparcc: can't run from pseq object. Looks like we run using the otu table(?)
+sparcc.chi1 <- sparcc(otu) #ERROR; need to transpose the OTU table so OTUs are columns and samples are rows
+totu <- t(otu)
+sparcc.chi1 <- sparcc(totu)
+## Define arbitrary threshold for SparCC correlation matrix for the graph
+sparcc.graph <- abs(sparcc.chi1$Cor) >= 0.3
+diag(sparcc.graph) <- 0
+library(Matrix)
+sparcc.graph <- Matrix(sparcc.graph, sparse=TRUE)
+## Create igraph objects
+ig.sparcc <- adj2igraph(sparcc.graph)
+
+## set size of vertex proportional to clr-mean
+vsize    <- rowMeans(clr(otu, 1))+6
+plot(ig.sparcc, vertex.size=vsize, vertex.label=NA, main="sparcc")
+
+#We can evaluate the weights on edges networks using the terms from the underlying model. SparCC correlations can be used directly.
+
+library(Matrix)
+elist.sparcc <- summary(sparcc.graph*sparcc.chi1$Cor)
+hist(elist.sparcc[,3], main='', xlab='edge weights')
+
+#Lets look at the degree statistics from the sparcc network.
+library(igraph)
+dd.sparcc <- degree.distribution(ig.sparcc)
+
+plot(0:(length(dd.sparcc)-1), dd.sparcc, ylim=c(0,.35), type='b',
+      ylab="Frequency", xlab="Degree", main="Degree Distributions")
+
+#Not sure about this quality; will use tutorial from biovcnet github
+sparcc.chi1$Cor[1:5, 1:5]
+#threw away names; will add back from otu dataframe
+rownames(sparcc.chi1$Cor) <- colnames(totu)
+colnames(sparcc.chi1$Cor) <- colnames(totu)
+rownames(sparcc.chi1$Cov) <- colnames(totu)
+colnames(sparcc.chi1$Cov) <- colnames(totu)
+#look to confirm
+sparcc.chi1$Cor[1:5, 1:5]
+
+#Plotting SparCC correlation
+#first generate helper function to get upper triangle of the correlation matrix
+get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+}
+#helper function to reorder matrix (?)
+reorder_cormat <- function(cormat){
+# Use correlation between variables as distance
+dd <- as.dist((1-cormat)/2)
+hc <- hclust(dd)
+cormat <-cormat[hc$order, hc$order]
+}
+
+plotableSparcc <- sparcc.chi1$Cor %>% reorder_cormat %>% get_upper_tri() %>% reshape2::melt() %>% na.omit()
+Sparcc_plot <- plotableSparcc %>% ggplot(aes(x = Var2, y = Var1, fill = value)) + geom_tile() + scale_fill_gradient2() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+Sparcc_plot
+
+#save sparcc plot
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparcc_tile.png",
+    width = 12, height = 9, units = 'in', res = 600)
+Sparcc_plot
+dev.off()
+
+#calculate sparcc p values
+#first have to boostrap the sparccc value
+tp0 <- proc.time()
+out2 <- sparccboot(totu, R = 1000)
+tp1 <- proc.time()
+tp1 - tp0
+
+#calculate p values from the bootstrapped values
+outP <- pval.sparccboot(out2)
+data.frame(outP$cors, outP$pvals) %>% head
+
+#these values are hard to use because they don’t tell you which p-values correspond to which species; source to fix: https://github.com/zdk123/SpiecEasi/issues/17
+
+cors <- outP$cors
+pvals <- outP$pvals
+sparCCpcors <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
+sparCCpcors[upper.tri(sparCCpcors, diag=FALSE)] <- cors
+sparCCpcors <- sparCCpcors + t(sparCCpcors)
+
+sparCCpval <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
+sparCCpval[upper.tri(sparCCpval, diag=FALSE)] <- pvals
+sparCCpval <- sparCCpval + t(sparCCpval)
+
+rownames(sparCCpcors) <- colnames(totu)
+colnames(sparCCpcors) <- colnames(totu)
+rownames(sparCCpval) <- colnames(totu)
+colnames(sparCCpval) <- colnames(totu)
+
+sparCCpcors[1:5, 1:5]
+sparCCpval[1:5, 1:5]
+
+#now need to process and account for false discovery rates 
+#add helper function first
+reorder_cor_and_p <- function(cormat, pmat){
+  dd <- as.dist((1-cormat)/2)
+  hc <- hclust(dd)
+  cormat <-cormat[hc$order, hc$order]
+  pmat <- pmat[hc$order, hc$order]
+  list(r = cormat, p = pmat)
+}
+
+reordered_all_sparcc <- reorder_cor_and_p(sparCCpcors, sparCCpval)
+reordered_sparccCor <- reordered_all_sparcc$r
+reordered_sparccP<- reordered_all_sparcc$p
+
+sparccCor_processed <- reordered_sparccCor  %>% get_upper_tri() %>% reshape2::melt() %>% na.omit() %>% rename(cor = value)
+sparccP_processed <- reordered_sparccP  %>% get_upper_tri() %>% reshape2::melt() %>% na.omit() %>% rename(p = value)
+
+# join the two data frames
+
+SparccP <- left_join(sparccCor_processed, sparccP_processed, by = c("Var1", "Var2")) %>%
+  # # remove self correlations
+  # filter(Var1 != Var2) %>% 
+  # calculate the false discovery rate to adjust for multiple p values
+  mutate(fdr = p.adjust(p, method = "BH"))
+
+#what is our false discovery rate threshold? for Maaslin2, we used a q value of 0.2; here, given the high number of pairwise correlations, we can try 0.05 and see how that works.
+fdrThresh <- 0.05 # fdr threshold
+
+sparccOkP <- SparccP%>% filter(fdr < fdrThresh) 
+
+SparccP_plot <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() + scale_fill_gradient2(low = "#800000FF", mid = "white", high = "#4D004B", midpoint = 0) + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + geom_point(data = sparccOkP, shape = 8, size = 0.5)
+
+SparccP_plot
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparccP.png",
+    width = 12, height = 9, units = 'in', res = 600)
+SparccP_plot
+dev.off()
+
+#save our SparccP dataframe as a csv file
+write.csv(SparccP, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCC.csv")
+test <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCC.csv") #looks reasonable
+remove(test)
 ```
 
 
