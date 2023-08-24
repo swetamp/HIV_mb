@@ -181,6 +181,21 @@ fisher.test(child$dpt, child$hiv)
 
 #breakdown of subjects (not for table 1, but for sequencing figure)
 table(meta_prune$subject)
+
+#Lancet Microbe reviewer requesting breakdown of children by clinic enrollment; need to pull this data from prior deidentified csv file:
+clinic <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/metadata_clean_10-7-21.csv")
+table(clinic$enr_clinic) #need to whittle this down to only the children with sequencing data 
+#dataframe with only study id, enr_clinic, and enr_clinic_other
+test <- clinic[c("study_id", "enr_clinic", "enr_clinic_other")]
+#standardize study_id
+test$study_id <- gsubfn("-", ".", test$study_id)
+#merge
+clin2 <- merge(child, test, by = "study_id")
+table(clin2$enr_clinic) #1 = BBCOE; 2 = Mogoditshane; 3 = Old Naledi; 4 = Lesirane; 9 = Other; and all other = Mochudi
+table(clin2$enr_clinic_other)
+table(clin2$enr_clinic, clin2$hiv)
+prop.table(table(clin2$enr_clinic, clin2$hiv), 2)
+#Created supplementary table with this information
 ```
 
 ### HIV-specific variables
@@ -605,6 +620,8 @@ p1 <- plot_ordination(chi_clr, clr_pcoa, color = "hiv2") +
   stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.5) +
   xlab("PC1 (14.4%)") + ylab("PC2 (8.9%)") +
   scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
+
+p1
 ```
 
 #### Permanova
@@ -687,39 +704,29 @@ adonis2(BC.dist ~ uri_rec2 + age, data = child, permutations = 1000, by = "margi
 adonis2(BC.dist ~ hiv + season + uri_rec2 + age, data = child, permutations = 1000, by = "terms")
 pm <- adonis2(BC.dist ~ hiv + season + uri_rec2 + age, data = child, permutations = 1000, by = "margin")
 pm
-  #In a multivariable model, HIV status (P=0.04, R2=0.019), season (P=0.002, R2=0.016), recent URI (P=0.01, R2=0.013), and age (P=0.04, R2=0.011) were a/w differences in overall microbiome composition using both by = options (above R2 and p values are from by = "margin")
+  #In a multivariable model, HIV status (P=0.04, R2=0.019), season (P=0.002, R2=0.016), recent URI (P=0.008, R2=0.013), and age (P=0.03, R2=0.011) were a/w differences in overall microbiome composition using both by = options (above R2 and p values are from by = "margin")
 ```
 
-Statistical reviewer from Lancet Microbe requested 95% CI for each R2 we presented. From web review appears the most straightforward way to obtain these values is through bootstrapping:
+Statistical reviewer from Lancet Microbe requested 95% CI for each R2 we presented. 
+
+From web review appears the most straightforward way to obtain these values is through bootstrapping:
 https://stats.stackexchange.com/questions/175026/formula-for-95-confidence-interval-for-r2
 https://rstudio-pubs-static.s3.amazonaws.com/288625_b0cf85c5be974eb795cef778535289d8.html
 
 General tutorial on bootstrapping:
 https://stats.oarc.ucla.edu/r/faq/how-can-i-generate-bootstrap-statistics-in-r/
 
+HOWEVER, I could not figure out how to bootstrap a microbiome PERMANOVA (code deleted but available in prior versions on Github) and reached out to Pixu Shi. Her response (8/12): "There is no CI for PERMANOVA because CI is for a parameter and PERMANOVA is nonparametric. The closest thing we can get is to run PERMANOVA 100 times, and report the 97.5 and 2.5 percentile of the F stat or p-value."
+
+Looks like we can use the permustats function from the vegan package for this: https://search.r-project.org/CRAN/refmans/vegan/html/permustats.html
+
 ```{r}
-library(boot)
-test <- function(child,i) {
-  test2 <- child[i,]
-  return(adonis2(BC.dist ~ hiv + season + uri_rec2 + age, data = child, permutations = 1000, by = "margin"))
-}
-
-set.seed(1234)
-boota <- boot(child, test, R=1000)
-boota
-
-#This isn't working; will try to bootstrap with a simpler test to better understand the code first using UCLA tutorial
-hsb2 <- read.table("https://stats.idre.ucla.edu/stat/data/hsb2.csv", sep=",", header=T)
-fc <- function(d, i){
-	d2 <- d[i,]
-	return(cor(d2$write, d2$math))
-}
-
-# set.seed(626)
-bootcorr <- boot(hsb2, fc, R=500)
-bootcorr
-summary(bootcorr)
-
+#extract permutation results and observed statistics from our permanova model
+perm <- permustats(pm)
+#summary statistics; NOTE: only presents upper limit (97.5%), suggesting that default for adonis2 is a one-sided test.
+summary(perm)
+#can use 'alternative' command to get both the upper and lower limit values, but now our p value is 2-sided and as a result is no longer significant for hiv and age. This is ok; F statistics are always one-sided so we will report our one-sided p value and use the 2-sided statistics for the coverage interval alone. Confirmed the appropriateness of one-sided p values for F stats with Pixu on 8/14
+summary(perm, alternative="two.sided")
 ```
 
 We also received a reviewer comment requesting unsupervised clustering to clarify if there are some hidden groups among the data, so we will add this analysis. We tried Dirichlet Multinomial Models as suggested by the reviewer, but this was unsuccessful and we ultimately successfully used k-medioid clustering as done by McCumber et al in CID paper, using the code shared on his github: https://github.com/alexmccumber/BRAVE_Kids
@@ -910,7 +917,7 @@ p1 <- plot_ordination(chi.spec_clr, clr_pcoa, color = "cluster") +
   labs(color = "Microbiome Profile")
 #gives us axes of 8.9% (y) and 14.3% (x); we will input these back into our figure above and make sure this is appropriate with MK. Weird though because 2 different distances used (euclidean here, bray above) and the clusters look different; what does our pcoa look like if we use bray here too?
 clr_pcoa2 <- ordinate(chi.spec, method = "PCoA", distance = "bray")
-p1 <- plot_ordination(chi.spec, clr_pcoa2, color = "cluster") +
+p1_clust <- plot_ordination(chi.spec, clr_pcoa2, color = "cluster") +
   geom_point(size = 0.005) + theme_classic() + theme(
     plot.title = element_text(size = 14, hjust = 0.5),
     legend.title = element_blank(),
@@ -926,28 +933,9 @@ p1 <- plot_ordination(chi.spec, clr_pcoa2, color = "cluster") +
   ylab("PC2 (17.3%)") +
   labs(color = "Microbiome Profile")
 
-p1
+p1_clust
 
 #looks the same!! so we can use these PC% in our figure above
-
-#Alex included permanova by cluster in his R code but we don't need this; will delete from final version
-#Create OTU table
-# otu <- as.data.frame(otu_table(chi.spec_clr, taxa_are_rows=TRUE))
-# #Need species in columns and observations in rows: transpose using t() function and save as a dataframe
-#   #Source: https://github.com/edamame-course/2015-tutorials/blob/master/final/Ashley_Intro_to_R.md
-# otu_trans <- data.frame(t(otu))
-# child <- data.frame(sample_data(chi.spec_clr))
-# #Calculate distance and save as a matrix
-# BC.dist=vegdist(otu_trans, method="euclidean")
-# 
-# adonis2(BC.dist ~ hiv + age + cluster, data = sampleDF, permutations = 1000, by = "margin")
-#   #significant association between beta-diversity and age (p=0.028) and cluster (p<0.001); HIV trend but not significant p=0.099)
-# dispr <- vegan::betadisper(BC.dist, sampleDF$hiv)
-# dispr
-# 
-# boxplot(dispr, main = "", xlab = "")
-# permutest(dispr)
-# #the average distance of each group member to the centroid DIFFERS by group (I assume based on avg distance to median produced by betadisper command + the permutest P value of 0.018); does this mean that part of my results are explained by the different distances within each HIV category? 
 
 #do our clusters associate with any of our demographic variables?
 #age by cluster
@@ -1927,12 +1915,223 @@ png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparccP.pn
 SparccP_plot
 dev.off()
 
+#what does it look like if we use an fdr of 0.1? 
+fdrThresh2 <- 0.1 # fdr threshold
+
+sparccOkP2 <- SparccP%>% filter(fdr < fdrThresh2) 
+
+SparccP_plot2 <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() + scale_fill_gradient2(low = "#800000FF", mid = "white", high = "#4D004B", midpoint = 0) + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + geom_point(data = sparccOkP2, shape = 8, size = 0.5)
+
+SparccP_plot2
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparccP2.png",
+    width = 12, height = 9, units = 'in', res = 600)
+SparccP_plot2
+dev.off()
+
 #save our SparccP dataframe as a csv file
 write.csv(SparccP, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCC.csv")
 test <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCC.csv") #looks reasonable
 remove(test)
+
+#Next: will import into cytoscape to generate network figure that includes detail on negative vs positive assoc and strength of association
+#Great cytoscape tutorial on youtube by the same people who created the sparcc tutorial I used: https://www.youtube.com/watch?v=f67jKjOZJaQ
+#FOR EASE OF VISUALIZATION: manually changed the taxonomy names in our sparCC csv file for the following species:
+#Corynebacterium sp. KPL1995 -> Corynebacterium pseudodiphtheriticum
+#Corynebacterium sp. KPL1986 -> Corynebacterium accolens
+#Haemophilus sp. C1 -> Haemophilus haemolyticus
+
+#then imported the updated sparCC csv file into cytoscape
+
+#What does our corrected taxonomy sparCC csv file look like in R? Can we use it to regenerate our nice tile plot?
+spartax <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCC.csv")
+spartax$X <- NULL
+sparccOkP2 <- spartax %>% filter(fdr < fdrThresh2) 
+SparccP_plot3 <- spartax %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() + scale_fill_gradient2(low = "#800000FF", mid = "white", high = "#4D004B", midpoint = 0) + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + geom_point(data = sparccOkP2, shape = 8, size = 0.5)
+#not working; probably best to fix the otu table and redo all steps to get a figure we can include in the supplement that has correct taxonomy names
+#sparcc: run from otu table but need to update row names first
+row.names(otu)[3] <- "Haemophilus haemolyticus"
+row.names(otu)[10] <- "Corynebacterium pseudodiphtheriticum"
+row.names(otu)[11] <- "Corynebacterium accolens"
+
+# otu <- as.data.frame(otu_table(chi.filter, taxa_are_rows=TRUE))
+# #need to remove the unidentified species from here: row 11, 25, 37, 38, 40
+#   #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+# #corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp., Nocardioides sp. Root122
+# otu <- otu[-c(11, 25, 37, 38, 40),]
+# 
+# # import our new otu table back into chi.filter, then re-create the dataframe and go from there
+# #import updated otutable into pseq object (convert to matrix first) and take a look
+# TT <- as.matrix(otu)
+# otu2 <- otu_table(TT, taxa_are_rows = TRUE)
+# class(otu2)
+# otu_table(chi.filter) <- otu2
+# #can we test it to see if it worked? 
+# test <- as.data.frame(otu_table(chi.filter)) #does not work; kicks out the renamed rows
+# remove(TT, test, otu2)
+
+totu <- t(otu)
+sparcc.chi1 <- sparcc(totu)
+
+sparcc.chi1$Cor[1:5, 1:5]
+#threw away names; will add back from otu dataframe
+rownames(sparcc.chi1$Cor) <- colnames(totu)
+colnames(sparcc.chi1$Cor) <- colnames(totu)
+rownames(sparcc.chi1$Cov) <- colnames(totu)
+colnames(sparcc.chi1$Cov) <- colnames(totu)
+#look to confirm
+sparcc.chi1$Cor[1:5, 1:5]
+
+# #what happens here if we modify our rownames and colnames?
+# lapply(sparcc.chi1$Cor, `colnames<-`, paste0("Haemophilus haemolyticus", 3))
+# lapply(sparcc.chi1$Cor, "dimnames", paste0("Haemophilus haemolyticus", 3))
+# 
+# row.names(otu)[3] <- "Haemophilus haemolyticus"
+# row.names(otu)[10] <- "Corynebacterium pseudodiphtheriticum"
+# row.names(otu)[11] <- "Corynebacterium accolens"
+
+#Plotting SparCC correlation
+#first generate helper function to get upper triangle of the correlation matrix
+get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+}
+#helper function to reorder matrix (?)
+reorder_cormat <- function(cormat){
+# Use correlation between variables as distance
+dd <- as.dist((1-cormat)/2)
+hc <- hclust(dd)
+cormat <-cormat[hc$order, hc$order]
+}
+
+plotableSparcc <- sparcc.chi1$Cor %>% reorder_cormat %>% get_upper_tri() %>% reshape2::melt() %>% na.omit()
+Sparcc_plot <- plotableSparcc %>% ggplot(aes(x = Var2, y = Var1, fill = value)) + geom_tile() + scale_fill_gradient2() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+Sparcc_plot
+
+#save sparcc plot
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparcc_tile_v2.png",
+    width = 12, height = 9, units = 'in', res = 600)
+Sparcc_plot
+dev.off()
+
+#calculate sparcc p values
+#first have to boostrap the sparccc value
+tp0 <- proc.time()
+out2 <- sparccboot(totu, R = 1000)
+tp1 <- proc.time()
+tp1 - tp0
+
+#calculate p values from the bootstrapped values
+outP <- pval.sparccboot(out2)
+data.frame(outP$cors, outP$pvals) %>% head
+
+#these values are hard to use because they don’t tell you which p-values correspond to which species; source to fix: https://github.com/zdk123/SpiecEasi/issues/17
+
+cors <- outP$cors
+pvals <- outP$pvals
+sparCCpcors <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
+sparCCpcors[upper.tri(sparCCpcors, diag=FALSE)] <- cors
+sparCCpcors <- sparCCpcors + t(sparCCpcors)
+
+sparCCpval <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
+sparCCpval[upper.tri(sparCCpval, diag=FALSE)] <- pvals
+sparCCpval <- sparCCpval + t(sparCCpval)
+
+rownames(sparCCpcors) <- colnames(totu)
+colnames(sparCCpcors) <- colnames(totu)
+rownames(sparCCpval) <- colnames(totu)
+colnames(sparCCpval) <- colnames(totu)
+
+sparCCpcors[1:5, 1:5]
+sparCCpval[1:5, 1:5]
+
+#now need to process and account for false discovery rates 
+#add helper function first
+reorder_cor_and_p <- function(cormat, pmat){
+  dd <- as.dist((1-cormat)/2)
+  hc <- hclust(dd)
+  cormat <-cormat[hc$order, hc$order]
+  pmat <- pmat[hc$order, hc$order]
+  list(r = cormat, p = pmat)
+}
+
+reordered_all_sparcc <- reorder_cor_and_p(sparCCpcors, sparCCpval)
+reordered_sparccCor <- reordered_all_sparcc$r
+reordered_sparccP<- reordered_all_sparcc$p
+
+sparccCor_processed <- reordered_sparccCor  %>% get_upper_tri() %>% reshape2::melt() %>% na.omit() %>% rename(cor = value)
+sparccP_processed <- reordered_sparccP  %>% get_upper_tri() %>% reshape2::melt() %>% na.omit() %>% rename(p = value)
+
+# join the two data frames
+
+SparccP <- left_join(sparccCor_processed, sparccP_processed, by = c("Var1", "Var2")) %>%
+  # # remove self correlations
+  # filter(Var1 != Var2) %>% 
+  # calculate the false discovery rate to adjust for multiple p values
+  mutate(fdr = p.adjust(p, method = "BH"))
+
+###Will try to rename species in SparccP and see if that helps with figure creation
+#create second dataframe given amt time required to bootstrap P values (so if doesn't work, we still have our original SparccP)
+#make Var1 and Var2 character variables, then rename using gsubfn
+# SparccP2 <- SparccP
+# SparccP2$Var1 <- as.character(SparccP2$Var1)
+# SparccP2$Var2 <- as.character(SparccP2$Var2)
+# SparccP2$Var1 <- gsub("Corynebacterium sp. KPL1995", "Corynebacterium pseudodiphtheriticum", SparccP2$Var1)
+# SparccP2$Var1 <- gsub("Corynebacterium sp. KPL1986", "Corynebacterium accolens", SparccP2$Var1)
+# SparccP2$Var1 <- gsub("Haemophilus sp. C1", "Haemophilus haemolyticus", SparccP2$Var1)
+# 
+# SparccP2$Var2 <- gsub("Corynebacterium sp. KPL1995", "Corynebacterium pseudodiphtheriticum", SparccP2$Var2)
+# SparccP2$Var2 <- gsub("Corynebacterium sp. KPL1986", "Corynebacterium accolens", SparccP2$Var2)
+# SparccP2$Var2 <- gsub("Haemophilus sp. C1", "Haemophilus haemolyticus", SparccP2$Var2)
+
+#what is our false discovery rate threshold? for Maaslin2, we used a q value of 0.2; here, will use 0.1.
+fdrThresh2 <- 0.1 # fdr threshold
+
+sparccOkP2 <- SparccP%>% filter(fdr < fdrThresh2) 
+
+SparccP_plot2b <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() + scale_fill_gradient2(low = "#800000FF", mid = "white", high = "#4D004B", midpoint = 0) + theme(
+  axis.text.x = element_text(angle = 45, hjust = 1),
+  axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
+
+SparccP_plot2b
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparccP2b.png",
+    width = 12, height = 9, units = 'in', res = 600)
+SparccP_plot2b
+dev.off()
+
+#save as .eps file in case:
+ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparccP2b.eps", width = 9, height = 7, units = "in")
+SparccP_plot2b
+dev.off()
+
+
+#save this SparCC output as a csv file so we can compare to our prior csv file (same code, but otu table was not corrected so figures included Corynebacterium sp. KPL1995 Corynebacterium sp. KPL1986 and Haemophilus sp. C1 instead of the correct spp names)
+write.csv(SparccP, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCCredo_cortax.csv")
+write.csv(SparccP, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCCredo_cortax2.csv")
+#numbers are very slightly different, probably due to variation inherent to running the program and the bootstrapping; given this, ideally would redo our figures in cytoscape with SparCCredo_cortax. Unfortunately, something about changing the row names in our otu file messed everything up so the sparccredo_cortax.csv weirdly imports into cytoscape with quotations around all species names, despite trying multiple things (exporting as .txt and .tsv files, changing Var1 and Var2 from factors to character variables and then to strings); ultimately fixed this problem by cutting all our data and pasting it into a new sheet.
+
+#Cytoscape file names that were generated with the corrected otu table all contain the term "redo"
+
+# class(SparccP$Var1)
+# class(SparccP$Var2)
+# test <- SparccP
+# test$Var1 <- as.character(test$Var1)
+# class(test$Var1)
+# test$Var2 <- as.character(test$Var2)
+# toString(test$Var1)
+# toString(test$Var2)
+# write.csv(test, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCCredo_cortax.csv")
+
+# #per below link will try to save as a text file instead
+# #link: https://groups.google.com/g/cytoscape-helpdesk/c/4XHpiWWAjRE
+# #save as .txt file and try again
+# write.table(SparccP, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCCredo_cortax.txt")
+# write.table(SparccP, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCCredo_cortax.tsv", quote=FALSE, sep = '\t')
+
 ```
 
+#### Differential abundance plots 
 
 ```{r}
 # Create dataframes with overall relative abundances of phyla and genera
