@@ -83,6 +83,7 @@ hist(child$age)
 summary(child$age)
 tapply(child$age, child$hiv, summary)
 kruskal.test(child$age, child$hiv)
+table(child$age)
 
 #Sex
 table(child$sex)  #74 girls
@@ -196,6 +197,36 @@ table(clin2$enr_clinic_other)
 table(clin2$enr_clinic, clin2$hiv)
 prop.table(table(clin2$enr_clinic, clin2$hiv), 2)
 #Created supplementary table with this information
+
+#Additional requests from LM reviewer: breastfeeding and growth status by HIV 
+#breastfeeding
+table(child$bfeed_1) #49 kids exclusively breastfed, 59 formula fed, and 35 received both breastmilk and formula
+table(child$bfeed_1, child$hiv)
+prop.table(table(child$bfeed_1, child$hiv), 2)
+# summary(table(child$bfeed_1, child$hiv))
+fisher.test(child$bfeed_1, child$hiv)
+
+#nutrition: will use mid upper arm circumference (MUAC) as surrogate
+###why missing MUAC for B-23 and E-23?
+hist(child$muac)
+summary(child$muac)
+tapply(child$muac, child$hiv, summary)
+kruskal.test(child$muac, child$hiv)
+
+#CLWH have lower median muac (15) compared to HEU (15.5) or HUU (15.85) kids; p <0.001 by K-W test. What if we look at it by nutrition category?
+child$muaccat <- NA
+child$muaccat [child$muac < 12.5] <- "GAM"
+child$muaccat [child$muac >= 12.5] <-  "Normal"
+table(child$muaccat)
+#only 1 child with general acute malnutrition, no kids with severe malnutrition by MUAC
+
+###Ask MK about growth percentile with available variables
+
+#Reviewer also asked about duration since abx, which we have already as a separate variable.
+table(child$meds_name)
+table(child$abx)
+#generating summary statistics of subset of data: https://stackoverflow.com/questions/4835830/r-language-how-do-i-print-see-summary-statistics-for-sample-subset
+summary(subset(child, abx == "Yes", select=med_days)) #among children who received abx, median (IQR) duration between abx Rx and enrollment = 35 (20, 62) days
 ```
 
 ### HIV-specific variables
@@ -617,9 +648,9 @@ p1 <- plot_ordination(chi_clr, clr_pcoa, color = "hiv2") +
     axis.text = element_text(size = 10),
     axis.title = element_text(size = 12)) +
   scale_color_manual(values=c('#800000FF','#155F83FF', '#FFA319FF'))+
-  stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.5) +
-  xlab("PC1 (14.4%)") + ylab("PC2 (8.9%)") +
-  scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
+  # stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.5) +
+  xlab("PC1 (14.4%)") + ylab("PC2 (8.9%)") 
+  # scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
 
 p1
 ```
@@ -728,6 +759,8 @@ summary(perm)
 #can use 'alternative' command to get both the upper and lower limit values, but now our p value is 2-sided and as a result is no longer significant for hiv and age. This is ok; F statistics are always one-sided so we will report our one-sided p value and use the 2-sided statistics for the coverage interval alone. Confirmed the appropriateness of one-sided p values for F stats with Pixu on 8/14
 summary(perm, alternative="two.sided")
 ```
+
+**UPDATE** Upon further discussion with Pixu, we determined that generating a 95% CI is not possible for a nonparametric permutational test (see email from Pixu 8/17): "For the PERMANOVA R2, we cannot get an interval estimate. The R2 of covariate X is calculated as the sum of square of X divided by the total sum of square. The permutation test will generate a distribution of R2 under the null, which is used to obtain a p-value, but cannot be used to obtain interval estimate for R2 like a parametric test. Same can be said for the F statistics. The interval from permustats() is not an interval estimate for the F statistic, as you can see it doesn’t even cover your observed F when p-value is very small. The interval from permustats() is actually the upper quantile of F statistic under the null (achieved by permutation). In short, PERMANOVA is a nonparametric permutation test that doesn’t have interval estimate for R2 or F statistic."
 
 We also received a reviewer comment requesting unsupervised clustering to clarify if there are some hidden groups among the data, so we will add this analysis. We tried Dirichlet Multinomial Models as suggested by the reviewer, but this was unsuccessful and we ultimately successfully used k-medioid clustering as done by McCumber et al in CID paper, using the code shared on his github: https://github.com/alexmccumber/BRAVE_Kids
 
@@ -2073,13 +2106,13 @@ write.csv(SparccP, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/
 #numbers are very slightly different, probably due to variation inherent to running the program and the bootstrapping; given this, ideally would redo our figures in cytoscape with SparCCredo_cortax. Unfortunately, something about changing the row names in our otu file messed everything up so the sparccredo_cortax.csv weirdly imports into cytoscape with quotations around all species names, despite trying multiple things (exporting as .txt and .tsv files, changing Var1 and Var2 from factors to character variables and then to strings); ultimately fixed this problem by cutting all our data and pasting it into a new sheet.
 #Cytoscape file names that were generated with the corrected otu table all contain the term "redo"
 
-
-
 ```
 
 #### Differential abundance plots 
 
 ```{r}
+###See k-medioid clustering section to create chi.prune, chi.rel, and melted_df!
+
 # Create dataframes with overall relative abundances of phyla and genera
 melted_df$Phylum <- as.character(melted_df$Phylum)
 phyla_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum), FUN=sum)
@@ -2142,6 +2175,91 @@ relative_df$Species[!(relative_df$Species %in% TOPSpecies)] <- "Other"
 sum(relative_df$Abundance)#sums to 143.0008; n=143 so tracks?
 table(relative_df$Species) #We have 11 levels for the Species variable, which are consistent with our top 10 + other
 
+###Prepping for barplot
+
+#To generate color palette of 11 colors used previously: 
+library(RColorBrewer)
+library(scales)
+chisp2 <- c("#293352", "#800000FF", "#767676FF", "#FFA319FF", "#8A9045FF", "#155F83FF", "#C16622FF", "#4D004B", "#8F3931FF", "#58593FFF", "#350E20FF")
+show_col(chisp2)
+
+#source for rotating x labels: https://stackoverflow.com/questions/1330989/rotating-and-spacing-axis-labels-in-ggplot2
+relative_df$subject_abundances <- (relative_df$Abundance)/(length(unique(relative_df$Sample))) 
+#abbreviate HIV status
+relative_df$hiv2 <- NA
+relative_df$hiv2 [relative_df$hiv == "Infected"] <- "CLWH"
+relative_df$hiv2 [relative_df$hiv == "Exposed Uninfected"] <- "HEU children"
+relative_df$hiv2 [relative_df$hiv == "Unexposed"] <- "HUU children"
+table(relative_df$hiv2)
+#matches up with table(relative_df$hiv)
+relative_df$hiv2 <- as.factor(relative_df$hiv2)
+relative_df$hiv2 <- reorder(relative_df$hiv2, new.order=c("CLWH", "HEU children", "HUU children"))
+relative_df$Species <- factor(relative_df$Species)
+relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium accolens", "Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
+                                    
+```
+
+- I kept getting a weird striped output in my barplots with the code in RMD (which did not happen in a standard R file), as described here: https://stackoverflow.com/questions/43997029/unwanted-stripes-in-ggplot2-bar-chart-when-knitted-to-pdf
+
+
+```{r, echo=FALSE, dev='png'}
+
+#Manuscript revisions: Do not italicize "Other"
+#Source for using ggtext: https://stackoverflow.com/questions/48688404/how-to-italicize-one-category-in-a-legend-in-ggplot2
+library(ggtext)
+subject_plot2 <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) + 
+  geom_bar(stat="identity", position="fill") + theme_classic() + 
+  theme(legend.position="right", 
+  legend.text= element_markdown(),
+  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + 
+  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  xlab("HIV Status") + ylab("Mean relative abundance") 
+
+#unwanted stripes; do they persist when saved as a .png?
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2b_TEST.png", width = 9, height = 5, units = 'in', res = 600)
+plot(subject_plot2)
+dev.off()
+#saves as a png with no problems!
+
+#asked ChatGPT for help 9/13/23!
+#1. will try to save as a pdf using ggsave with increased resolution
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2b_TEST.pdf", plot = subject_plot2, dpi = 300)
+#Still looks striped in Preview, so then I opened the same file in Acrobat Reader and THE STRIPES ARE GONE!!
+
+
+###TROUBLESHOOTING HERE 9-12-23
+subject_plot2 <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) + 
+  geom_bar(stat="identity", position="fill") + theme_classic() + 
+  theme(legend.position="right", 
+  legend.text= element_markdown(),
+  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + 
+  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  xlab("HIV Status") + ylab("Mean relative abundance") 
+
+#trying something else: DOES NOT WORK
+subject_plot2 <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) + 
+  stat_summary(fun ='sum', geom = 'bar', aes(x=hiv2, y=subject_abundances, fill=Species)) + theme_classic() + 
+  theme(legend.position="right", 
+  legend.text= element_markdown(),
+  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + 
+  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  xlab("HIV Status") + ylab("Mean relative abundance") 
+
+p2 <- plot(subject_plot2)
+p2
+
+ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2b_TEST.eps", width = 12, height = 4, units = "in")
+p2
+dev.off()
+# png(file="genplot_kaiju_05122022.png",
+#     width = 9, height = 5, units = 'in', res = 600)
+# plot(subject_plot2)
+# dev.off()
+
+
 ```
 
 ####DETOUR: Assessing correlation between D. pigrum and S. pyogenes for Matt (will not be included in paper, delete from final RMD file that goes on GitHub)
@@ -2196,8 +2314,533 @@ dev.off()
 
 ```
 
+####Comparing immunocompetent CLWH to HEU and HUU children
 
+- will create a figure of the PCoA plots and rel abundance plots to include in LM appendix at request of reviewer
 
+```{r}
+#need to remove the specific kids with HIV that have low CD4 (N=11)
+test <- chi_cd4[c("sample_id", "cd4nL")]
+#remove B.01, B.03, B.04, B.05, B.09, B.11, B.18, B.25, B.27, B.32, B.46
+  #also need to remove the kids missing CD4: B.45 and B.52
+#so 50 HUU kids + 44 HEI kids - 2 kids without CD4 - 11 kids with low CD4 = 81
+hucd4 = subset_samples(chi_prune, sample_id != "B.01.CHI" & sample_id != "B.03.CHI" & sample_id != "B.04.CHI" &
+                         sample_id != "B.05.CHI" & sample_id != "B.09.CHI" & sample_id != "B.11.CHI" &
+                         sample_id != "B.18.CHI" & sample_id != "B.25.CHI" & sample_id != "B.27.CHI" &
+                         sample_id != "B.32.CHI" & sample_id != "B.45.CHI" & sample_id != "B.46.CHI" &
+                         sample_id != "B.52.CHI")
+hu <- data.frame(sample_data(hucd4))
+table(hu$hiv) #adds up: 50 HUU kids + 49 HEU kids + 31 kids with HIV (44 orig - 13 removed above)
+
+#SECOND: PCOA plots and PERMANOVA
+#Transform our pseq object
+hucd4_clr <- transform(hucd4, "clr")
+
+#Create new immunocompetent-CLWH variable
+table(hu$hiv)
+hu$hiv2 <- NA
+hu$hiv2 [hu$hiv == "Infected"] <- "Immunocompetent CLWH"
+hu$hiv2 [hu$hiv == "Exposed Uninfected"] <- "HEU children"
+hu$hiv2 [hu$hiv == "Unexposed"] <- "HUU children"
+table(hu$hiv2)
+class(hu$hiv2)
+hu$hiv2 <- as.factor(hu$hiv2)
+hu$hiv2 <- reorder(hu$hiv2, new.order=c("Immunocompetent CLWH", "HEU children", "HUU children"))
+
+#Import back into pseq (source: https://jacobrprice.github.io/2017/08/26/phyloseq-to-vegan-and-back.html)
+sample_data(hucd4_clr) <- as.data.frame(hu)
+#now see if it worked:
+bloop <- data.frame(sample_data(hucd4_clr))
+table(bloop$hiv2)
+#success!
+remove(bloop)
+
+#PCoA plot#
+clr_pcoa <- ordinate(hucd4_clr, method = "PCoA", distance = "euclidean")
+lines <- c("dashed", "dashed", "dashed")
+clr_eiuu <- plot_ordination(hucd4_clr, clr_pcoa, color = "hiv2") +
+  geom_point(size = 2) + theme_classic() + theme(
+    plot.title = element_text(size = 14, hjust = 0.5),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    legend.background = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)) +
+  scale_color_manual(values=c('#800000FF','#155F83FF', '#FFA319FF'))+
+  stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.7) +
+  xlab("PC1 (14.9%)") + ylab("PC2 (9.1%)") +
+  scale_linetype_manual(values=lines)
+
+clr_eiuu
+
+#PERMANOVA
+otu <- as.data.frame(otu_table(hucd4_clr, taxa_are_rows=TRUE))
+#Need species in columns and observations in rows: transpose using t() function and save as a dataframe
+#Source: https://github.com/edamame-course/2015-tutorials/blob/master/final/Ashley_Intro_to_R.md
+otu_trans <- data.frame(t(otu))
+BC.dist=vegdist(otu_trans, method="euclidean")
+
+#hiv + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis(BC.dist ~ hiv + age, data = hu, permutations = 1000)
+#No significant difference by HIV status among children (P = 0.18), but age remains significant (P=0.02, R2 = 0.014)
+#Now getting message that adonis will be deprecated and I need to use adonis2
+adonis2(BC.dist ~ hiv + age, data = hu, permutations = 1000)
+#No significant difference by HIV status among children (P = 0.15, R2=0.018), but age remains significant (P=0.012, R2 = 0.014)
+#check with age first given issues with order of variables in adonis; not signif different
+adonis2(BC.dist ~ age + hiv, data = hu, permutations = 1000)
+
+#clean up
+remove(hucd4_clr, test, otu, otu_trans, clr_eiuu, clr_pcoa, bloop, BC.dist, lines)
+
+#RELATIVE ABUNDANCE PLOTS
+chi.rel <- transform_sample_counts(hucd4, function(Abundance) Abundance/sum(Abundance))
+sample_sums(chi.rel)  # This is a sanity check to make sure that relative abundance was calculated for each sample prior to pooling data
+#All samples add to 1
+melted_df <- psmelt(chi.rel)
+#clean up melted_df
+melted_df <- within(melted_df, rm(sib_weight, sib_sex, sib_height, sib_muac, sib_race, sib_bfeed_1,
+                                  sib_bfeed_2, sib_uri_recent, sib_uri_current, sib_pcr_1, sib_pcr_2,
+                                  sib_bcg, sib_hepb, sib_clinic, sib_clinic_dx___5, sib_clinic_dx_oth,
+                                  sib_hosp, sib_meds, sib_meds_name, sibmo, sibyr, sib_vl1_weeks, sib_vl_weeks2,
+                                  sib_med_days, sib_dpt, sib_pcv, sib_rota, sib_polio, sib_measles, sib_age))
+melted_df <- within(melted_df, rm(samp_storage, enr_clinic, enr_clinic_other, mat_np))
+
+# Create dataframes with overall relative abundances of phyla and genera
+melted_df$Phylum <- as.character(melted_df$Phylum)
+phyla_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum), FUN=sum)
+phyla_abundances$x <- (phyla_abundances$x)/(nsamples(chi.rel))
+names(phyla_abundances)[names(phyla_abundances) == 'x'] <- 'phyla_Ab'
+sum(phyla_abundances$phyla_Ab)    # Should sum to 1 (sum of relative abundances of phyla)
+nrow(phyla_abundances)            # Corresponds to # of unique phyla: 116
+
+melted_df$Genus <- as.character(melted_df$Genus)
+genus_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,
+                                                           OTU=melted_df$OTU), FUN=mean)
+genus_abundances <- aggregate(genus_abundances$x, by=list(Phylum=genus_abundances$Phylum,
+                                                          Genus=genus_abundances$Genus), FUN=sum)
+names(genus_abundances)[names(genus_abundances) == 'x'] <- 'genus_Ab'
+sum(genus_abundances$genus_Ab)    # Should sum to 1 (sum of relative abundances of genera)
+nrow(genus_abundances)            # Corresponds to # of unique genera: 2146
+abundances <- merge(genus_abundances, phyla_abundances, by="Phylum")
+
+melted_df$Species <- as.character(melted_df$Species)
+species_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,Species=melted_df$Species,
+                                                             OTU=melted_df$OTU), FUN=mean)
+species_abundances <- aggregate(species_abundances$x, by=list(Phylum=species_abundances$Phylum,
+                                                              Genus=species_abundances$Genus, Species=species_abundances$Species), FUN=sum)
+names(species_abundances)[names(species_abundances) == 'x'] <- 'species_Ab'
+sum(species_abundances$species_Ab)    # Should sum to 1 (sum of relative abundances of genera)
+nrow(species_abundances)            # Corresponds to # of unique species: 6708 ***WHY is this different from 6709?###
+abundances <- merge(abundances, species_abundances, by=c("Phylum", "Genus"))
+#merging on Phylum AND Genus gets rid of the phylum.x and phylum.y problem we were having earlier
+
+phyla_abundances <- arrange(phyla_abundances, desc(phyla_Ab)) 
+# Create a df with the top 5 phyla
+TOPPhyla <- unique(phyla_abundances$Phylum[1:5])
+phylum_df <- phyla_abundances[phyla_abundances$Phylum %in% TOPPhyla,]
+phylum_df$Phylum <- factor(phylum_df$Phylum, levels = phylum_df$Phylum[order(-phylum_df$phyla_Ab)])
+
+genus_abundances <- arrange(genus_abundances, desc(genus_Ab))  
+TOPGenera <- unique(genus_abundances$Genus[1:10])
+genus_df <- genus_abundances[genus_abundances$Genus %in% TOPGenera,]
+genus_df$Genus <- factor(genus_df$Genus, levels = genus_df$Genus[order(-genus_df$genus_Ab)])
+
+#create df with top 10 species
+species_abundances <- arrange(species_abundances, desc(species_Ab))  
+TOPSpecies <- unique(species_abundances$Species[1:10])
+species_df <- species_abundances[species_abundances$Species %in% TOPSpecies,]
+species_df$Species <- factor(species_df$Species, levels = species_df$Species[order(-species_df$species_Ab)])
+
+# Rename species other than top10 as "Other" in creating dataframe relative_df
+relative_df <- merge(melted_df, abundances, by=c("Genus", "Species"))
+#keep getting vector memory exhausted error; need to reboot R so will save melted_df and abundances as csv files
+#source for fix: https://stackoverflow.com/questions/51295402/r-on-macos-error-vector-memory-exhausted-limit-reached
+
+relative_df$Species[!(relative_df$Species %in% TOPSpecies)] <- "Other"
+sum(relative_df$Abundance) #sums to 130.0008 (and we have n=130 kids...?)
+table(relative_df$Species)
+
+#To generate color palette of 11 colors used previously: 
+library(RColorBrewer)
+library(scales)
+chisp2 <- c("#293352", "#800000FF", "#767676FF", "#FFA319FF", "#8A9045FF", "#155F83FF", "#C16622FF", "#4D004B", "#8F3931FF", "#58593FFF", "#350E20FF")
+show_col(chisp2)
+
+#CREATING RELATIVE ABUNDANCE PLOT
+relative_df$subject_abundances <- (relative_df$Abundance)/(length(unique(relative_df$Sample))) 
+#abbreviate HIV status
+relative_df$hiv2 <- NA
+relative_df$hiv2 [relative_df$hiv == "Infected"] <- "Immunocompetent CLWH"
+relative_df$hiv2 [relative_df$hiv == "Exposed Uninfected"] <- "HEU children"
+relative_df$hiv2 [relative_df$hiv == "Unexposed"] <- "HUU children"
+table(relative_df$hiv2)
+#matches up with table(relative_df$hiv)
+relative_df$hiv2 <- as.factor(relative_df$hiv2)
+relative_df$hiv2 <- reorder(relative_df$hiv2, new.order=c("Immunocompetent CLWH", "HEU children", "HUU children"))
+relative_df$Species <- factor(relative_df$Species)
+relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Micrococcus luteus", "Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
+subject_plot2 <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) +   geom_bar(stat="identity", position="fill") + theme_classic() + theme(
+  legend.position="right", legend.text=element_text(size=10, face="italic"), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) +  
+  scale_fill_manual(values = chisp2) +
+  ylab("Mean relative abundance") 
+
+plot(subject_plot2)
+
+#Now use cowplot to create 1 figure containing our Immunocompetent CLWH vs HEU/HUU
+fig_nlCD4_HEU_HUU <- plot_grid(clr_eiuu, subject_plot2, labels = "AUTO",  align = "h", axis = "b", rel_widths = c(1,1.5))
+
+fig_nlCD4_HEU_HUU
+
+#save as .eps
+#why are the colors all jacked in the barplot?
+ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/CD4nl_HEU_HUU.eps", width = 12, height = 4, units = "in")
+fig_nlCD4_HEU_HUU
+dev.off()
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/CD4nl_HEU_HUU.png",
+    width = 11, height = 5, units = 'in', res = 600)
+fig_nlCD4_HEU_HUU
+dev.off()
+
+#MAASLIN 2: CLWH (immunocompetent only), HEU, HUU
+hu.filter <- filter_taxa(hucd4, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(hu.filter) #51
+
+otu <- as.data.frame(otu_table(hu.filter, taxa_are_rows=TRUE))
+#need to remove the unidentified species from here: row 10, 27, 44, 45, 47
+#source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp., Nocardioides sp. Root122
+otu <- otu[-c(10, 27, 44, 45, 47),]
+
+#Univariable
+fit_data2 = Maaslin2(
+  input_data = otu, 
+  input_metadata = hu, 
+  min_prevalence = 0.2,
+  max_significance = 0.2,
+  output = "maaslin_immunocompetent_UV", 
+  fixed_effects = c("hiv"),
+  reference = c("hiv,Unexposed"))
+#No significant assoc
+
+fit_data2 = Maaslin2(
+  input_data = otu, 
+  input_metadata = hu, 
+  min_prevalence = 0.2,
+  max_significance = 0.2,
+  output = "maaslin_immunocompetent_mv", 
+  fixed_effects = c("hiv", "season", "age", "abx", "wood", "uri_rec2"),
+  reference = c("hiv,Unexposed"))
+#Signif assoc with age and season, but not HIV
+
+#Comparing differentially abundant species: used lefse
+```
+**For final file: pull the lefse code in from the 'HIV MB LEfSe RMD file'**
+
+####Comparing immunocompromised CLWH to HEU and HUU children
+
+- will create a figure of the PCoA plots and rel abundance plots to include in LM appendix at request of reviewer (4 part figure combined with the immunocompetent CLWH sub-analysis above)
+
+```{r}
+hlowcd4 = subset_samples(chi_prune, sample_id != "B.06.CHI" & sample_id != "B.07.CHI" & sample_id != "B.12.CHI" &
+              sample_id != "B.13.CHI" & sample_id != "B.14.CHI" & sample_id != "B.15.CHI" &
+              sample_id != "B.16.CHI" & sample_id != "B.17.CHI" & sample_id != "B.19.CHI" &
+              sample_id != "B.20.CHI" & sample_id != "B.22.CHI" & sample_id != "B.23.CHI" &
+              sample_id != "B.26.CHI" & sample_id != "B.28.CHI" & sample_id != "B.29.CHI" &
+              sample_id != "B.30.CHI" & sample_id != "B.31.CHI" & sample_id != "B.33.CHI" &
+              sample_id != "B.34.CHI" & sample_id != "B.35.CHI" & sample_id != "B.36.CHI" &
+              sample_id != "B.37.CHI" & sample_id != "B.38.CHI" & sample_id != "B.39.CHI" &
+              sample_id != "B.40.CHI" & sample_id != "B.41.CHI" & sample_id != "B.44.CHI" &
+              sample_id != "B.45.CHI" & sample_id != "B.48.CHI" & sample_id != "B.49.CHI" &
+              sample_id != "B.50.CHI" & sample_id != "B.51.CHI" & sample_id != "B.52.CHI")
+hlow <- data.frame(sample_data(hlowcd4))
+table(hlow$hiv) #adds up: 50 HUU kids + 49 HEU kids + 11 kids with HIV (44 orig - 33 removed above)
+
+#SECOND: PERMANOVA +/- PCoA plot
+#Transform our pseq object
+hlowcd4_clr <- transform(hlowcd4, "clr")
+
+#PERMANOVA
+otu <- as.data.frame(otu_table(hlowcd4_clr, taxa_are_rows=TRUE))
+#Need species in columns and observations in rows: transpose using t() function and save as a dataframe
+#Source: https://github.com/edamame-course/2015-tutorials/blob/master/final/Ashley_Intro_to_R.md
+otu_trans <- data.frame(t(otu))
+BC.dist=vegdist(otu_trans, method="euclidean")
+
+#hiv + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis2(BC.dist ~ hiv + age, data = hlow, permutations = 1000)
+#Significant difference by HIV status among children (P = 0.003, R2 = 0.032) and age (P=0.03, R2 = 0.015)
+#check with age first given issues with order of variables in adonis; not signif different
+adonis2(BC.dist ~ age + hiv, data = hlow, permutations = 1000)
+
+#PCoA plot#
+table(hlow$hiv)
+hlow$hiv2 <- NA
+hlow$hiv2 [hlow$hiv == "Infected"] <- "Immunocompromised CLWH"
+hlow$hiv2 [hlow$hiv == "Exposed Uninfected"] <- "HEU children"
+hlow$hiv2 [hlow$hiv == "Unexposed"] <- "HUU children"
+table(hlow$hiv2)
+class(hlow$hiv2)
+hlow$hiv2 <- as.factor(hlow$hiv2)
+hlow$hiv2 <- reorder(hlow$hiv2, new.order=c("Immunocompromised CLWH", "HEU children", "HUU children"))
+
+#Import back into pseq (source: https://jacobrprice.github.io/2017/08/26/phyloseq-to-vegan-and-back.html)
+sample_data(hlowcd4_clr) <- as.data.frame(hlow)
+#now see if it worked:
+bloop <- data.frame(sample_data(hlowcd4_clr))
+#success!
+remove(bloop)
+
+clr_pcoa <- ordinate(hlowcd4_clr, method = "PCoA", distance = "euclidean")
+lines <- c("dashed", "dashed", "dashed")
+
+p5 <- plot_ordination(hlowcd4_clr, clr_pcoa, color = "hiv2") +
+  geom_point(size = 0.005) + theme_classic() + theme(
+    plot.title = element_text(size = 14, hjust = 0.5),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    legend.background = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)) +
+  scale_color_manual(values=c('#800000FF','#155F83FF', '#FFA319FF'))+
+  stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.5) +
+  xlab("PC1 (15.4%)") + ylab("PC2 (9.2%)") +
+  scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
+
+# png(file="clr_lowcd4_HEU_HUU.png",
+    # width = 5, height = 4, units = 'in', res=600)
+p5
+# dev.off()
+
+#clean up
+# remove(clr_pcoa, hlowcd4_clr, otu, otu_trans, p5, BC.dist, lines)
+
+#CREATE MELTED_DF FOR RELATIVE ABUNDANCE PLOTS
+chi.rel <- transform_sample_counts(hlowcd4, function(Abundance) Abundance/sum(Abundance))
+sample_sums(chi.rel)  # This is a sanity check to make sure that relative abundance was calculated for each sample prior to pooling data
+#All samples add to 1
+melted_df <- psmelt(chi.rel)
+#clean up melted_df
+melted_df <- within(melted_df, rm(sib_weight, sib_sex, sib_height, sib_muac, sib_race, sib_bfeed_1,
+                                  sib_bfeed_2, sib_uri_recent, sib_uri_current, sib_pcr_1, sib_pcr_2,
+                                  sib_bcg, sib_hepb, sib_clinic, sib_clinic_dx___5, sib_clinic_dx_oth,
+                                  sib_hosp, sib_meds, sib_meds_name, sibmo, sibyr, sib_vl1_weeks, sib_vl_weeks2, sib_med_days, sib_dpt, sib_pcv, sib_rota, sib_polio, sib_measles, sib_age))
+melted_df <- within(melted_df, rm(samp_storage, enr_clinic, enr_clinic_other, mat_np))
+
+#RELATIVE ABUNDANCE PLOTS
+# Create dataframes with overall relative abundances of phyla and genera
+melted_df$Phylum <- as.character(melted_df$Phylum)
+phyla_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum), FUN=sum)
+phyla_abundances$x <- (phyla_abundances$x)/(nsamples(chi.rel))
+names(phyla_abundances)[names(phyla_abundances) == 'x'] <- 'phyla_Ab'
+sum(phyla_abundances$phyla_Ab)    # Should sum to 1 (sum of relative abundances of phyla)
+nrow(phyla_abundances)            # Corresponds to # of unique phyla: 116
+
+melted_df$Genus <- as.character(melted_df$Genus)
+genus_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,
+                                                           OTU=melted_df$OTU), FUN=mean)
+genus_abundances <- aggregate(genus_abundances$x, by=list(Phylum=genus_abundances$Phylum,
+                                                          Genus=genus_abundances$Genus), FUN=sum)
+names(genus_abundances)[names(genus_abundances) == 'x'] <- 'genus_Ab'
+sum(genus_abundances$genus_Ab)    # Should sum to 1 (sum of relative abundances of genera)
+nrow(genus_abundances)            # Corresponds to # of unique genera: 2146
+abundances <- merge(genus_abundances, phyla_abundances, by="Phylum")
+
+melted_df$Species <- as.character(melted_df$Species)
+species_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,Species=melted_df$Species,
+                                                             OTU=melted_df$OTU), FUN=mean)
+species_abundances <- aggregate(species_abundances$x, by=list(Phylum=species_abundances$Phylum,
+                                                              Genus=species_abundances$Genus, Species=species_abundances$Species), FUN=sum)
+names(species_abundances)[names(species_abundances) == 'x'] <- 'species_Ab'
+sum(species_abundances$species_Ab)    # Should sum to 1 (sum of relative abundances of genera)
+nrow(species_abundances)            # Corresponds to # of unique species: 6708 ***WHY is this different from 6709?###
+abundances <- merge(abundances, species_abundances, by=c("Phylum", "Genus"))
+#merging on Phylum AND Genus gets rid of the phylum.x and phylum.y problem we were having earlier
+
+phyla_abundances <- arrange(phyla_abundances, desc(phyla_Ab)) 
+# Create a df with the top 5 phyla
+TOPPhyla <- unique(phyla_abundances$Phylum[1:5])
+phylum_df <- phyla_abundances[phyla_abundances$Phylum %in% TOPPhyla,]
+phylum_df$Phylum <- factor(phylum_df$Phylum, levels = phylum_df$Phylum[order(-phylum_df$phyla_Ab)])
+
+genus_abundances <- arrange(genus_abundances, desc(genus_Ab))  
+TOPGenera <- unique(genus_abundances$Genus[1:10])
+genus_df <- genus_abundances[genus_abundances$Genus %in% TOPGenera,]
+genus_df$Genus <- factor(genus_df$Genus, levels = genus_df$Genus[order(-genus_df$genus_Ab)])
+
+#create df with top 10 species
+species_abundances <- arrange(species_abundances, desc(species_Ab))  
+TOPSpecies <- unique(species_abundances$Species[1:10])
+species_df <- species_abundances[species_abundances$Species %in% TOPSpecies,]
+species_df$Species <- factor(species_df$Species, levels = species_df$Species[order(-species_df$species_Ab)])
+
+# Rename species other than top10 as "Other" in creating dataframe relative_df
+relative_df <- merge(melted_df, abundances, by=c("Genus", "Species"))
+#keep getting vector memory exhausted error; need to reboot R so will save melted_df and abundances as csv files
+#source for fix: https://stackoverflow.com/questions/51295402/r-on-macos-error-vector-memory-exhausted-limit-reached
+
+relative_df$Species[!(relative_df$Species %in% TOPSpecies)] <- "Other"
+sum(relative_df$Abundance) #sums to 110.0008 (and we have n=110 kids...?)
+table(relative_df$Species)
+
+#already generated our chisp2 color palette
+
+#CREATING RELATIVE ABUNDANCE PLOT
+relative_df$subject_abundances <- (relative_df$Abundance)/(length(unique(relative_df$Sample))) 
+#abbreviate HIV status
+relative_df$hiv2 <- NA
+relative_df$hiv2 [relative_df$hiv == "Infected"] <- "Immunocompromised CLWH"
+relative_df$hiv2 [relative_df$hiv == "Exposed Uninfected"] <- "HEU children"
+relative_df$hiv2 [relative_df$hiv == "Unexposed"] <- "HUU children"
+table(relative_df$hiv2)
+#matches up with table(relative_df$hiv)
+relative_df$hiv2 <- as.factor(relative_df$hiv2)
+relative_df$hiv2 <- reorder(relative_df$hiv2, new.order=c("Immunocompromised CLWH", "HEU children", "HUU children"))
+
+relative_df$Species <- factor(relative_df$Species)
+relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium accolens", "Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae",  "Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
+
+subject_plot_hlow <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) + 
+  geom_bar(stat="identity", position="fill") + theme_classic() + theme(
+  legend.position="right", legend.text=element_text(size=10, face="italic"), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) +  
+  scale_fill_manual(values = chisp2) +
+  ylab("Mean relative abundance") 
+
+hlow_plot <- plot(subject_plot_hlow)
+
+#NOW: make a 4 part figure combining our PCoA plots and relative abundance plots for our subanalyses of HEU and HUU children vs 1) CLWH and low CD4 and 2) CLWH and normal CD4
+
+fig_HEU_HUU_CD4_comb <- plot_grid(p5, hlow_plot, clr_eiuu, subject_plot2,labels = "AUTO", nrow = 2, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1.3))
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig S_CD4hilow_HEU_HUU.png",
+    width = 11, height = 8, units = 'in', res = 600)
+fig_HEU_HUU_CD4_comb 
+dev.off()
+
+###PULL IN MAASLIN2 AND LEFSE CODE FOR FINAL GITHUB FILE###
+```
+
+####HEU-HUU Comparisons
+
+A reviewer asked "And you also might wonder whether there is a difference HEU vs. HUU and what that might mean for the other two comparisons if there were?"
+
+So we will compare beta diversity and maaslin2 for HEU vs HUU kids only. Can generate PCoA plot, but will not create a supplemental figure unless we see differences of note.
+
+```{r}
+no_hiv = subset_samples(chi_prune, hiv != "Infected")
+
+nohiv <- data.frame(sample_data(no_hiv))
+table(nohiv$hiv) #adds up: 50 HUU kids + 49 HEU kids only
+
+################
+#ALPHA DIVERSITY
+################
+#Create dataframe with diversity indices for each specimen using PRUNED pseq object
+diversity <- estimate_richness(no_hiv, measures = c("Shannon", "Simpson", "Chao1", "Observed"))
+
+setDT(diversity, keep.rownames = TRUE)[]
+colnames(diversity) <- c("sample_id", "Observed", "Chao1", "se.chao1", "Shannon", "Simpson")
+rownames(diversity) <- diversity$sample_id
+diversity <- merge(diversity, nohiv, by="sample_id")
+
+class(diversity$hiv) #character; need to make factor to relevel
+diversity$hiv <- as.factor(diversity$hiv)
+diversity$hiv <- relevel(diversity$hiv, ref = "Unexposed")
+summary(div_mv <- lm(Shannon ~ age + hiv + wood + season + abx + uri_rec2, data = diversity))
+
+#No association between HEU status and alpha diversity measures
+
+###################
+#PERMANOVA and PCoA
+###################
+
+#Transform our pseq object
+nohiv_clr <- transform(no_hiv, "clr")
+
+otu <- as.data.frame(otu_table(nohiv_clr, taxa_are_rows=TRUE))
+#Need species in columns and observations in rows: transpose using t() function and save as a dataframe
+#Source: https://github.com/edamame-course/2015-tutorials/blob/master/final/Ashley_Intro_to_R.md
+otu_trans <- data.frame(t(otu))
+BC.dist=vegdist(otu_trans, method="euclidean")
+
+#hiv + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis2(BC.dist ~ hiv + age, data = nohiv, permutations = 1000, by = "margin")
+#Significant difference by age among children (P = 0.02, R2 = 0.018) but not HEU status (P=0.09, R2 = 0.014)
+
+#PCoA plot#
+table(nohiv$hiv)
+nohiv$hiv2 <- NA
+nohiv$hiv2 [nohiv$hiv == "Exposed Uninfected"] <- "HEU children"
+nohiv$hiv2 [nohiv$hiv == "Unexposed"] <- "HUU children"
+table(nohiv$hiv2)
+class(nohiv$hiv2)
+nohiv$hiv2 <- as.factor(nohiv$hiv2)
+nohiv$hiv2 <- reorder(nohiv$hiv2, new.order=c("HEU children", "HUU children"))
+
+#Import back into pseq (source: https://jacobrprice.github.io/2017/08/26/phyloseq-to-vegan-and-back.html)
+sample_data(nohiv_clr) <- as.data.frame(nohiv)
+#now see if it worked:
+bloop <- data.frame(sample_data(nohiv_clr))
+table(bloop$hiv2)
+#success!
+remove(bloop)
+
+clr_pcoa <- ordinate(nohiv_clr, method = "PCoA", distance = "euclidean")
+lines <- c("dashed", "dashed")
+
+p_no <- plot_ordination(nohiv_clr, clr_pcoa, color = "hiv2") +
+  geom_point(size = 0.005) + theme_classic() + theme(
+    plot.title = element_text(size = 14, hjust = 0.5),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    legend.background = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)) +
+  scale_color_manual(values=c('#800000FF','#155F83FF'))+
+  stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.5) +
+  xlab("PC1 (15.9%)") + ylab("PC2 (9.6%)") +
+  scale_linetype_manual(values= c("dashed", "dashed"))
+
+p_no
+
+#########
+#MAASLIN2
+#########
+#Maaslin2 tutorial: https://github.com/biobakery/biobakery/wiki/maaslin2
+
+#UPDATE per d/w MK 5/21: filter based on round abundance of 50 and re-run the model
+nohiv.filter <- filter_taxa(no_hiv, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(nohiv.filter) #54
+
+otu <- as.data.frame(otu_table(nohiv.filter, taxa_are_rows=TRUE))
+###PAUSED HERE 8-24-23
+#need to remove the unidentified species from here (n=6): row 9, 29, 46, 47, 49, 51
+  #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp., Nocardioides sp. Root122, Microbacterium sp. 70-16
+otu <- otu[-c(9, 29, 46, 47, 49, 51),]
+
+#Corynebacterium sp. KPL1995 -> Corynebacterium pseudodiphtheriticum
+#Corynebacterium sp. KPL1986 -> Corynebacterium accolens
+#Haemophilus sp. C1 -> Haemophilus haemolyticus
+
+row.names(otu)[3] <- "Haemophilus haemolyticus"
+row.names(otu)[8] <- "Corynebacterium pseudodiphtheriticum"
+row.names(otu)[9] <- "Corynebacterium accolens"
+
+fit_data2 = Maaslin2(
+  input_data = otu, 
+  input_metadata = nohiv, 
+  min_prevalence = 0.2,
+  max_significance = 0.2,
+  output = "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/maaslin_mv_filt50_nohiv", 
+  fixed_effects = c("hiv", "season", "age", "abx", "wood", "uri_rec2"),
+  reference = c("hiv,Unexposed"))
+```
+
+**Summary of findings: no difference in beta diversity or differentially abundant species among HEU children when compared to HUU children.**
 
 ####HEU-CLWH Sibling Comparisons
 
