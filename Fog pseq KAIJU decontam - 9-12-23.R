@@ -113,6 +113,8 @@ saveRDS(phy.kaiju, file = "/Users/swetapatel/OneDrive - Duke University/Fogarty 
 #########
 #Source: https://benjjneb.github.io/decontam/vignettes/decontam_intro.html
 
+phy.kaiju <- readRDS("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/phy.kaiju_decon09132023.rds")
+
 #Step 1: inspect library sizes
 df <- as.data.frame(sample_data(phy.kaiju)) # Put sample_data into a ggplot-friendly data.frame
 df$LibrarySize <- sample_sums(phy.kaiju)
@@ -211,6 +213,14 @@ bar_decontam <- plot_grid(bar_0.05, bar_0.1, bar_0.3, labels = "AUTO",  nrow = 1
 bar_decontam
 
 png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/decontam_barplots.png", width = 9, height = 5, units = 'in', res = 600)
+bar_decontam
+dev.off()
+
+###UPDATE 9-19-23: PER MK, keep only bar 0.1 and bar 0.05 as a 2-part figure and include only in "response to reviewers" section
+bar_decontam <- plot_grid(bar_0.05, bar_0.1, labels = "AUTO",  nrow = 1, align = "h", axis = "b")
+bar_decontam
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/decontam_barplots_V2.png", width = 5, height = 3, units = 'in', res = 600)
 bar_decontam
 dev.off()
 
