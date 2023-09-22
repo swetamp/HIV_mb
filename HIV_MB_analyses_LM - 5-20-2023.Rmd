@@ -3,6 +3,8 @@ title: "HIV Microbiome Analyses - Patel et al"
 author: "Sweta Patel"
 date: "5/15/2023"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -46,6 +48,7 @@ library(cowplot)
 library(cluster)
 library(devtools)
 library(SpiecEasi)
+library(pairwiseAdonis)
 ```
 
 ```{r include=FALSE}
@@ -220,7 +223,38 @@ child$muaccat [child$muac >= 12.5] <-  "Normal"
 table(child$muaccat)
 #only 1 child with general acute malnutrition, no kids with severe malnutrition by MUAC
 
-###Ask MK about growth percentile with available variables
+###Asked MK about growth percentile with available variables 9/19; need to calculate Z scores for height and weight.
+#R package available to calculate 
+#source for zscorer: https://github.com/nutriverse/zscorer
+library(zscorer)
+#sex needs to be coded as male (1) and female (2)
+child$sex2 <- NA
+child$sex2 [child$sex == 0] <- 1
+child$sex2 [child$sex == 1] <- 2
+table(child$sex)
+table(child$sex2) #matches up
+#age needs to be in days, not months
+child$age_d <- child$age*(30.4375) #confirmed that B-01 age and age_d match up
+
+#weight for age
+child2 <- addWGSR(data=child, sex="sex2", firstPart = "weight", secondPart = "age_d", index="wfa")
+summary(child2$wfaz)  #ERROR: weight for U21 listed as 80.5 kg, corresponding to a z score of 37.6. Likely an error; will double check data entry with Charity
+#in the meantime, drop U21 from our wfa z score calculations
+child3 <- subset(child2, study_id !="U.21")
+child3 <- addWGSR(data=child3, sex="sex2", firstPart = "weight", secondPart = "age_d", index="wfa")
+summary(child3$wfaz)
+hist(child3$wfaz) #roughly normal, slight left skew
+tapply(child3$wfaz, child3$hiv, summary)
+kruskal.test(child3$wfaz, child3$hiv)
+
+#height for age
+child2 <- addWGSR(data=child, sex="sex2", firstPart = "height", secondPart = "age_d", index="hfa")
+summary(child2$hfaz)
+hist(child2$hfaz) #roughly normal, slight left skew
+tapply(child2$hfaz, child2$hiv, summary)
+kruskal.test(child2$hfaz, child2$hiv)
+
+#CLWH have significantly lower wfaz and hfaz compared to HEU and HUU children.
 
 #Reviewer also asked about duration since abx, which we have already as a separate variable.
 table(child$meds_name)
@@ -648,9 +682,9 @@ p1 <- plot_ordination(chi_clr, clr_pcoa, color = "hiv2") +
     axis.text = element_text(size = 10),
     axis.title = element_text(size = 12)) +
   scale_color_manual(values=c('#800000FF','#155F83FF', '#FFA319FF'))+
-  # stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.5) +
-  xlab("PC1 (14.4%)") + ylab("PC2 (8.9%)") 
-  # scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
+  stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.5) +
+  xlab("PC1 (14.4%)") + ylab("PC2 (8.9%)") +
+  scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
 
 p1
 ```
@@ -764,7 +798,126 @@ summary(perm, alternative="two.sided")
 
 We also received a reviewer comment requesting unsupervised clustering to clarify if there are some hidden groups among the data, so we will add this analysis. We tried Dirichlet Multinomial Models as suggested by the reviewer, but this was unsuccessful and we ultimately successfully used k-medioid clustering as done by McCumber et al in CID paper, using the code shared on his github: https://github.com/alexmccumber/BRAVE_Kids
 
-#### K-medioid clustering
+#### MaAsLin2 models
+
+#### MaAsLin2 barplot (previously figure 3, now figure 2 in manuscript)
+```{r}
+#UPDATE AUG 3: use Maaslin2 results to create barplot
+maaslin <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/maaslin_mv_kaiju_filt50_v4/significant_results.tsv", sep = "\t")
+#clean up data: remove "." from species name and make names factors so we can reorder them
+class(maaslin$feature)
+maaslin$feature <- gsub(".", " ", maaslin$feature, fixed = TRUE)
+maaslin$feature <- gsub("sp  KPL1995", "pseudodiphtheriticum", maaslin$feature, fixed = TRUE)
+maaslin$feature <- as.factor(maaslin$feature)
+#rename feature to species
+maaslin <- rename(maaslin, Species = 'feature')
+#create new variable for positive or neg coefficient that we can use to add color to our figures
+maaslin$posneg <- NA
+maaslin$posneg [maaslin$coef >= 0] <- "Pos"
+maaslin$posneg [maaslin$coef < 0] <- "Neg"
+table(maaslin$posneg)
+
+#will create 4 horizontal barplots and use cowplot to align them into 1 figure
+#MAKE NEW VAR for coef + or neg and then use that for your barplot fill
+#season
+m_seas <- subset(maaslin, metadata == "season")
+#relevel so all negative values grouped together
+m_seas$Species <- reorder(m_seas$Species, new.order=c("Micrococcus luteus", "Kocuria polaris", "Moraxella bovis", "Moraxella caprae", "Moraxella catarrhalis", "Moraxella caviae", "Moraxella cuniculi", "Moraxella lacunata", "Moraxella lincolnii", "Moraxella macacae", "Moraxella nonliquefaciens", "Moraxella oblonga", "Moraxella ovis"))
+
+m_s <- ggplot(m_seas, aes(x=coef, y=Species, fill=posneg)) +
+  geom_bar(stat="identity") +
+  ggtitle("Rainy season") +
+  scale_fill_manual(values=c('#800000FF', '#155F83FF')) +
+  scale_x_continuous(breaks = seq(-6, 4, 1), limits = c(-5, 3)) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    # legend.text = element_text(size = 12),
+    legend.position = "none",
+    # legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.text.y = element_text(face = "italic"),
+    axis.title = element_blank()) +
+  geom_errorbar(aes(xmin=coef-stderr, xmax=coef+stderr), width=.2) 
+
+#age
+m_age <- subset(maaslin, metadata == "age")
+
+m_a <- ggplot(m_age, aes(x=coef, y=Species, fill=posneg)) +
+  geom_bar(stat="identity") +
+  ggtitle("Age") +
+  scale_fill_manual(values=c('#800000FF', '#155F83FF')) +
+  scale_x_continuous(breaks = seq(-6, 4, 1), limits = c(-5, 3)) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    # legend.text = element_text(size = 12),
+    legend.position = "none",
+    # legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.text.y = element_text(face = "italic"),
+    axis.title = element_blank()) +
+  geom_errorbar(aes(xmin=coef-stderr, xmax=coef+stderr), width=.2) 
+
+#recent URI
+m_uri <- subset(maaslin, metadata == "uri_rec2")
+
+m_u <- ggplot(m_uri, aes(x=coef, y=Species, fill=posneg)) +
+  geom_bar(stat="identity") +
+  ggtitle("Recent URI symptoms") +
+  scale_fill_manual(values=c('#155F83FF')) +
+  scale_x_continuous(breaks = seq(-6, 4, 1), limits = c(-5, 3)) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    # legend.text = element_text(size = 12),
+    legend.position = "none",
+    # legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.text.y = element_text(face = "italic"),
+    axis.title = element_blank()) +
+  geom_errorbar(aes(xmin=coef-stderr, xmax=coef+stderr), width=.2) 
+
+#hiv
+m_hiv <- subset(maaslin, metadata == "hiv")
+
+#Source to split C. pseudo into 2 lines on the Y axis for space: https://stackoverflow.com/questions/20123147/add-line-break-to-axis-labels-and-ticks-in-ggplot
+m_h <- ggplot(m_hiv, aes(x=coef, y=Species, fill=posneg)) +
+  geom_bar(stat="identity") +
+  ggtitle("HIV infection") +
+  scale_fill_manual(values=c('#800000FF')) +
+  scale_x_continuous(breaks = seq(-6, 4, 1), limits = c(-5, 3)) +
+  scale_y_discrete(labels=function(x){sub("\\s", "\n", x)}) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    # legend.text = element_text(size = 12),
+    legend.position = "none",
+    # legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.text.y = element_text(face = "italic"),
+    axis.title = element_blank()) +
+  geom_errorbar(aes(xmin=coef-stderr, xmax=coef+stderr), width=.2) 
+
+#combine into 1 cowplot
+right <- plot_grid(m_h, m_u, m_a,
+          labels = c('B', 'C', 'D'),
+          nrow = 3, 
+          label_size = 12,
+          rel_heights = c(1, 1, 1.75),
+          align = "v")
+
+fig3 <- plot_grid(m_s, right,
+                  labels = c('A', '', '', ''),
+                  nrow = 1,
+                  label_size = 14, 
+                  rel_heights = c(1, 0.8))
+                  # align = "v", axis = "b")
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig2NEW(maaslin).pdf", plot = fig3, dpi = 300, width = 12, height = 4)
+```
+
+### K-medioid clustering
 
 ```{r}
 chi_prune = subset_samples(pruned, subject == "child")
@@ -1065,7 +1218,7 @@ fig_barclust
 dev.off()
 ```
 
-- Statistical testing of demographic variables by biotype (as done in CID paper); will use same variables as used in Table 1 (plus HIV). Included in Table (table # TBD for manuscript, likely supplemental)
+#### Statistical testing of demographic variables by biotype (as done in CID paper); will use same variables as used in Table 1 (plus HIV). Included in Table (table # TBD for manuscript, likely supplemental)
 
 ```{r}
 #Age
@@ -1203,11 +1356,14 @@ prop.table(table(sampleDF$abx, sampleDF$clust15), 2)
 summary(table(sampleDF$abx, sampleDF$clust15)) #P = 0.008
 ```
 
-- Multivariable analyses of associations between clinical variables and microbiome profiles.
+#### Multivariable analyses of associations between clinical variables and microbiome profiles.
 
 A priori, we would expect antibiotic exposure and URI sx to associate with both HIV and microbiome composition (even though we do not see this in our demographics table). Wood smoke shouldn't be affected by HIV status (except potentially as proxy for low SES --> less access to healthcare but this is a bit of a stretch as 61% of our study participants were exposed to wood smoke). Thus, we will adjust for age, abx exposure, and URI sx when looking for associations between HIV and microbiome profile. We need binary outcomes for multivariable logistic regression, so will look at cluster 2 yes/no and clusters 1/5 yes/no by HIV status. Can also look at clusters using multinomial logistic regression? Run and confirm with MK. 
 
+Update: will run multivariable multinomial logistic regression adjusting for all of our prespecified confounders ***
+
 ```{r}
+sampleDF <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/metadata_clust.csv")
 #Need to create binary 0/1 variables for cluster 2 and cluster 1/5 vars
 
 sampleDF$clust2b <- NA
@@ -1247,7 +1403,7 @@ exp(confint(mylogit))
 #Using code from our PCV-13 serotype analysis published in PLOS One in 2021
 library(nnet)
 sampleDF$cluster <- relevel(sampleDF$cluster, ref = "1")
-summary(test1 <- multinom(cluster ~ hiv + age, data = sampleDF))
+summary(test1 <- multinom(cluster ~ hiv + age + uri_rec2 + season + wood2, data = sampleDF))
 z1 <- summary(test1)$coefficients/summary(test1)$standard.errors
 z1
 #Calculate p-values using Wald tests (here z-tests).
@@ -1264,7 +1420,7 @@ exp(confint(test1))
 *Summary of multivariable analysis*
 **In a multivariable logistic regression model adjusting for all covariables specified in our methods with presence/absence of cluster 2 as the outcome of interest, HIV infection was associated with presence of cluster 2 (S. pneumo - H. flu); OR (95% CI): 5.31 (1.66, 20.75).**
 
-**In multinomial logistic regression model with cluster membership as the outcome, cluster 1 set as the reference, and HIV status and age as covariables, HIV was significantly associated with the presence of cluster 2; relative risk ratio (95% CI) 5.10 (1.34, 19.36) ; p=0.017. Age was significantly associated with the presence of cluster 3; relative risk ratio (95% CI) 0.94 (0.90, 0.98) ; p=0.007.**
+**In a multinomial logistic regression model with cluster membership as the outcome; cluster 1 set as the reference; and HIV status, age, wood smoke exposure, season, and uri sx as covariables, HIV was significantly associated with the presence of cluster 2; relative risk ratio (95% CI) 5.17 (1.30, 20.55) ; p=0.019, as was wood smoke (RRR (95% CI): 3.63 (1.16, 11.36), p=0.026). Age and URI sx were significantly associated with the presence of cluster 3; age relative risk ratio (95% CI) 0.95 (0.90, 0.99) ; p=0.012; URI sx RRR (95% CI): 4.64 (1.28, 16.80), p=0.019. Lastly,  season was associated with cluster 4: RRR (95%): 0.23 (0.08, 0.65), p=0.005.
 
 - Microbiome factors: did alpha diversity differ by cluster? What species comprised each cluster?
 
@@ -1420,33 +1576,39 @@ f$tax = factor(f$tax, levels=c("Corynebacterium accolens", "Corynebacterium prop
 #rename tax so it looks nicer in the table legend
 colnames(f)[colnames(f) == "tax"] <- "Species"
 
-subject_plot3 <- ggplot(f[order(f$Species, decreasing = TRUE),], aes(x=variable, y=value, fill=Species)) + 
+clust_plot <- ggplot(f[order(f$Species, decreasing = TRUE),], aes(x=variable, y=value, fill=Species)) + 
   geom_bar(stat="identity", position="fill") + theme_classic() + 
   theme(legend.position="right", 
-  legend.text=element_text(size=10, face="italic"),
+  legend.text=element_markdown(),
   axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
-  axis.title.x = element_text(size=12), axis.text.x = element_text(size=10, vjust = 1, hjust = 1, colour = "black")) + 
-  scale_fill_manual(values = chisp2) +
-  # scale_x_discrete(labels=c("No", "Yes")) +
+  axis.title.x = element_text(size=12), axis.text.x = element_text(size=10, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
   xlab("Microbiome profile") + ylab("Mean relative abundance") 
+
+clust_plot
 
 #save for ease of review; if you include in manuscript, will need to save as an eps file (sample code below)
 png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/cluster_rel_abund.png",
     width = 12, height = 9, units = 'in', res = 600)
-subject_plot3
+clust_plot
 dev.off()
 
 #NOW: use cowplot to combine our PCoA plot and composition bar plot into one figure
-fig5 <- plot_grid(clust, subject_plot3, labels = c('A', 'B'), align = "h", axis = "b", label_size = 12, rel_widths = c(1, 1.5))
+fig5 <- plot_grid(clust, clust_plot, labels = c('A', 'B'), align = "h", axis = "b", label_size = 12, rel_widths = c(1, 1.5))
 fig5
 
-#save as .eps file to comply with Lancet Microbe requirements
-ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig5_clust.eps", width = 11, height = 3.5, units = "in")
-fig5
-dev.off()
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig3NEW(clust).pdf", plot = fig5, dpi = 300, width = 11, height = 3.5)
+
+# #save as .eps file to comply with Lancet Microbe requirements
+# ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig5_clust.eps", width = 11, height = 3.5, units = "in")
+# fig5
+# dev.off()
+
+#Save our cluster composition + relative abundances as a csv file
+write.csv(fig, '/Users/swetapatel/OneDrive - Duke University/Fogarty coding/cluster_comp.csv')
+
 ```
 
-What do our clusters look like by immune status among CLWH?
+#### What do our clusters look like by immune status among CLWH?
 
 We originally repeated the clustering process with only CLWH and ended up with 6 clusters, but from d/w MK we should complete all sub-analyses using our original 5 clusters. Thus, all of the CLWH-specific clustering code was deleted from this version and we will start with the csv file we saved previously that includes a cluster variable. We will subset out our CLWH, generate the relevant variables (vL, CD4), and look for associations between HIV-specific variables and clusters among CLWH.
 
@@ -1748,7 +1910,7 @@ fisher.test(chi_cd4$cd4nL, chi_cd4$clust23)
 #Will not do any multivariable testing because our sample size is too small
 ```
 
-####Co-occurrence plots (aka network analysis) to characterize interspecies interactions/associations 
+### Co-occurrence plots (aka network analysis) to characterize interspecies interactions/associations 
 
 - Got reviewer request for the following: "I suspect you will have a multiple associations with higher Corynebacterium such as an intact immune system, and a negative association with Staph/Strep (which will be highly associated with CD4+ count). Please see co-occurence plots built with networks of spearman correlations (PMID: 30093571)."
 
@@ -1981,6 +2143,8 @@ spartax <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding
 spartax$X <- NULL
 sparccOkP2 <- spartax %>% filter(fdr < fdrThresh2) 
 SparccP_plot3 <- spartax %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() + scale_fill_gradient2(low = "#800000FF", mid = "white", high = "#4D004B", midpoint = 0) + theme(axis.text.x = element_text(angle = 45, hjust = 1)) + geom_point(data = sparccOkP2, shape = 8, size = 0.5)
+
+
 #not working; probably best to fix the otu table and redo all steps to get a figure we can include in the supplement that has correct taxonomy names
 #sparcc: run from otu table but need to update row names first
 row.names(otu)[3] <- "Haemophilus haemolyticus"
@@ -2106,9 +2270,194 @@ write.csv(SparccP, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/
 #numbers are very slightly different, probably due to variation inherent to running the program and the bootstrapping; given this, ideally would redo our figures in cytoscape with SparCCredo_cortax. Unfortunately, something about changing the row names in our otu file messed everything up so the sparccredo_cortax.csv weirdly imports into cytoscape with quotations around all species names, despite trying multiple things (exporting as .txt and .tsv files, changing Var1 and Var2 from factors to character variables and then to strings); ultimately fixed this problem by cutting all our data and pasting it into a new sheet.
 #Cytoscape file names that were generated with the corrected otu table all contain the term "redo"
 
+#UPDATE 9-12-23: Need to fix our heatmap so it's easier for the reader:
+#1. Put organisms in alphabetical order
+#2. shift the axes so the tiles are right up against the axes 
+#will attempt this with the SparCCredo_cortax2_test file we created (and used to create our correlation network in Cytoscape)
+#Sources: reversing axes: https://stackoverflow.com/questions/28391850/reverse-order-of-discrete-y-axis-in-ggplot2
+
+SparccPcsv <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCCredo_cortax2_test.csv")
+
+SparccP_plot2b <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() + scale_fill_gradient2(low = "#800000FF", mid = "white", high = "#4D004B", midpoint = 0) + theme(
+  axis.text.x = element_text(angle = 45, hjust = 1),
+  axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
+#set FDR
+fdrThresh2 <- 0.1 # fdr threshold
+
+sparccOkP2 <- SparccP%>% filter(fdr < fdrThresh2)
+
+SparccP_plot2c <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() + scale_fill_gradient2(low = "#800000FF", mid = "white", high = "#4D004B", midpoint = 0) + scale_x_discrete(limits=rev, position = "top") + scale_y_discrete(limits=rev, position = "right") + theme(
+  axis.text.x = element_text(angle = 45, hjust = 0, vjust = 1),
+  axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
+
+#We want a triangular layout of our tiles. Asked ChatGPT:
+#1. Convert dataframe to triangular correlation matrix with dplyr, then put that into ggplot2
+cor_matrix <- SparccP %>%
+  as.matrix() %>%
+  as.dist() %>%
+  hclust() %>%
+  cutree(k = nrow(SparccP)) %>%
+  dist() %>%
+  as.matrix()
+#did not work; trying another way by converting dataframe to long format:
+sparcc_test <- pivot_longer(SparccP, cols = everything(), names_to = "var1", values_to = "correlation")
+#tried multiple options that did NOT work; think I'll have to redo my sparcc and bootstrapped p values AGAIN and re-order the matrix before i combine it with the bootstrapped p values into a dataframe.
 ```
 
-#### Differential abundance plots 
+**Trying SparCC again**
+```{r}
+chi.filter <- filter_taxa(chi_prune, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(chi.filter) #43
+otu <- as.data.frame(otu_table(chi.filter, taxa_are_rows=TRUE))
+#need to remove the unidentified species from here: row 11, 25, 37, 38, 40
+  #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp., Nocardioides sp. Root122
+otu <- otu[-c(11, 25, 37, 38, 40),]
+
+#clean up otu table
+row.names(otu)[3] <- "Haemophilus haemolyticus"
+row.names(otu)[10] <- "Corynebacterium pseudodiphtheriticum"
+row.names(otu)[11] <- "Corynebacterium accolens"
+
+totu <- t(otu)
+sparcc.chi1 <- sparcc(totu)
+
+sparcc.chi1$Cor[1:5, 1:5]
+#threw away names; will add back from otu dataframe
+rownames(sparcc.chi1$Cor) <- colnames(totu)
+colnames(sparcc.chi1$Cor) <- colnames(totu)
+rownames(sparcc.chi1$Cov) <- colnames(totu)
+colnames(sparcc.chi1$Cov) <- colnames(totu)
+#look to confirm
+sparcc.chi1$Cor[1:5, 1:5]
+
+#Plotting SparCC correlation
+#first generate helper function to get upper triangle of the correlation matrix
+get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+}
+
+# get_upper_tri <- function(mat){
+#   lt <- mat
+#   lt[lower.tri(mat)] <- ""
+#   mat <- as.data.frame(upper)
+#   mat
+# }
+
+#helper function to reorder matrix (?)
+reorder_cormat <- function(cormat){
+# Use correlation between variables as distance
+dd <- as.dist((1-cormat)/2)
+hc <- hclust(dd)
+cormat <-cormat[hc$order, hc$order]
+}
+
+plotableSparcc <- sparcc.chi1$Cor %>% reorder_cormat %>% get_upper_tri() %>% reshape2::melt() %>% na.omit()
+Sparcc_plot <- plotableSparcc %>% ggplot(aes(x = Var2, y = Var1, fill = value)) + geom_tile() + scale_fill_gradient2() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+Sparcc_plot
+
+# plotableSparcc <- sparcc.chi1$Cor %>% reorder_cormat() %>% get_upper_tri() %>% reshape2::melt() %>% na.omit()
+# Sparcc_plot <- plotableSparcc %>% ggplot(aes(reorder(Var2, -desc(as.character(Var2))), reorder(Var1, -desc(as.character(Var1))), fill = value)) + geom_tile() + scale_fill_gradient2() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+# Sparcc_plot
+
+#save sparcc plot
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparcc_tile_v3.png",
+    width = 12, height = 9, units = 'in', res = 600)
+Sparcc_plot
+dev.off()
+
+#calculate sparcc p values
+#first have to boostrap the sparccc value
+tp0 <- proc.time()
+out2 <- sparccboot(totu, R = 1000)
+tp1 <- proc.time()
+tp1 - tp0
+
+#calculate p values from the bootstrapped values
+outP <- pval.sparccboot(out2)
+data.frame(outP$cors, outP$pvals) %>% head
+
+#these values are hard to use because they don’t tell you which p-values correspond to which species; source to fix: https://github.com/zdk123/SpiecEasi/issues/17
+
+cors <- outP$cors
+pvals <- outP$pvals
+sparCCpcors <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
+sparCCpcors[upper.tri(sparCCpcors, diag=FALSE)] <- cors
+sparCCpcors <- sparCCpcors + t(sparCCpcors)
+
+sparCCpval <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
+sparCCpval[upper.tri(sparCCpval, diag=FALSE)] <- pvals
+sparCCpval <- sparCCpval + t(sparCCpval)
+
+rownames(sparCCpcors) <- colnames(totu)
+colnames(sparCCpcors) <- colnames(totu)
+rownames(sparCCpval) <- colnames(totu)
+colnames(sparCCpval) <- colnames(totu)
+
+sparCCpcors[1:5, 1:5]
+sparCCpval[1:5, 1:5]
+
+#now need to process and account for false discovery rates 
+#add helper function first
+reorder_cor_and_p <- function(cormat, pmat){
+  dd <- as.dist((1-cormat)/2)
+  hc <- hclust(dd)
+  cormat <-cormat[hc$order, hc$order]
+  pmat <- pmat[hc$order, hc$order]
+  list(r = cormat, p = pmat)
+}
+
+reordered_all_sparcc <- reorder_cor_and_p(sparCCpcors, sparCCpval)
+reordered_sparccCor <- reordered_all_sparcc$r
+reordered_sparccP<- reordered_all_sparcc$p
+
+sparccCor_processed <- reordered_sparccCor  %>% get_upper_tri() %>% reshape2::melt() %>% na.omit() %>% rename(cor = value)
+sparccP_processed <- reordered_sparccP  %>% get_upper_tri() %>% reshape2::melt() %>% na.omit() %>% rename(p = value)
+
+# join the two data frames
+
+SparccP <- left_join(sparccCor_processed, sparccP_processed, by = c("Var1", "Var2")) %>%
+  # # remove self correlations
+  # filter(Var1 != Var2) %>% 
+  # calculate the false discovery rate to adjust for multiple p values
+  mutate(fdr = p.adjust(p, method = "BH"))
+
+#what is our false discovery rate threshold? for Maaslin2, we used a q value of 0.2; here, will use 0.1.
+fdrThresh2 <- 0.1 # fdr threshold
+
+sparccOkP2 <- SparccP%>% filter(fdr < fdrThresh2) 
+
+SparccP_plot2c <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() + scale_fill_gradient2(low = "#800000FF", mid = "white", high = "#4D004B", midpoint = 0) + scale_x_discrete(position = "bottom", limits=rev) + theme(
+  axis.text.x = element_markdown(angle = 45, hjust = 1, face = "italic"),
+  axis.text.y = element_markdown(face = "italic"),
+  axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
+
+# scale_x_discrete(limits=rev) + scale_y_discrete(position = "right")
+
+SparccP_plot2c
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparccP2c.png",
+    width = 12, height = 9, units = 'in', res = 600)
+SparccP_plot2c
+dev.off()
+
+#save as pdf using ggsave
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4SparCC.pdf", plot = SparccP_plot2c, dpi = 300, width = 10, height = 7)
+
+#will re-recreate our sparCC plot that is alphabetical and share with MK. We can either have an alphabetical plot or a triangle plot, but I don't know how to create a plot that is both
+SparccPcsv <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCCredo_cortax2_test.csv")
+
+SparccP_plot2d <- SparccPcsv %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() + scale_fill_gradient2(low = "#800000FF", mid = "white", high = "#4D004B", midpoint = 0) + scale_x_discrete(limits=rev, position = "top") + scale_y_discrete(limits=rev, position = "right") + theme(
+   axis.text.x = element_markdown(angle = 45, hjust = 0, face = "italic"),
+  axis.text.y = element_markdown(face = "italic"),
+  axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4SparCC_V2.pdf", plot = SparccP_plot2d, dpi = 300, width = 10, height = 7)
+
+```
+
+### Differential abundance plots 
 
 ```{r}
 ###See k-medioid clustering section to create chi.prune, chi.rel, and melted_df!
@@ -2227,42 +2576,18 @@ dev.off()
 ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2b_TEST.pdf", plot = subject_plot2, dpi = 300)
 #Still looks striped in Preview, so then I opened the same file in Acrobat Reader and THE STRIPES ARE GONE!!
 
-
-###TROUBLESHOOTING HERE 9-12-23
-subject_plot2 <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) + 
-  geom_bar(stat="identity", position="fill") + theme_classic() + 
-  theme(legend.position="right", 
-  legend.text= element_markdown(),
-  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
-  axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + 
-  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
-  xlab("HIV Status") + ylab("Mean relative abundance") 
-
-#trying something else: DOES NOT WORK
-subject_plot2 <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) + 
-  stat_summary(fun ='sum', geom = 'bar', aes(x=hiv2, y=subject_abundances, fill=Species)) + theme_classic() + 
-  theme(legend.position="right", 
-  legend.text= element_markdown(),
-  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
-  axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + 
-  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
-  xlab("HIV Status") + ylab("Mean relative abundance") 
-
 p2 <- plot(subject_plot2)
 p2
 
-ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2b_TEST.eps", width = 12, height = 4, units = "in")
-p2
-dev.off()
-# png(file="genplot_kaiju_05122022.png",
-#     width = 9, height = 5, units = 'in', res = 600)
-# plot(subject_plot2)
-# dev.off()
+#may require some size troubleshooting when we reassemble our final 4 part figure, but we will save as pdf using ggsave
 
+# ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2b_TEST.eps", width = 12, height = 4, units = "in")
+# p2
+# dev.off()
 
 ```
 
-####DETOUR: Assessing correlation between D. pigrum and S. pyogenes for Matt (will not be included in paper, delete from final RMD file that goes on GitHub)
+### DETOUR: Assessing correlation between D. pigrum and S. pyogenes for Matt (will not be included in paper, delete from final RMD file that goes on GitHub)
 
 - will use our "relative_df" dataframe that has abundances for all 6708 species identified and pull out D. pigrum and S. pyogenes
 
@@ -2311,6 +2636,779 @@ png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/corr_forMK
      width = 5, height = 5, units = 'in', res = 600)
 mk
 dev.off()
+
+```
+
+### Subanalysis of factors associated with microbiome composition among CLWH
+
+#### Creating new variables
+
+```{r}
+hiv = subset_samples(chi_prune, hiv == "Infected")
+chi_hiv <- data.frame(sample_data(hiv))
+
+##############
+#NEW VARIABLES
+##############
+#How many kids receiving TMP-SMX? NOTE: we did not include these kids in the abx category. Need to re-do analyses with this included?
+table(chi_hiv$child_tmpsmx) #15 kids on TMP-SMX
+#manual inspection: 10 kids on TMP-SMX without other abx exposure
+
+#Need to make a binary variable for tmpsmx use
+chi_hiv$tmpsmx <- NA
+chi_hiv$tmpsmx [chi_hiv$child_tmpsmx == 1] <- "Yes"
+chi_hiv$tmpsmx[chi_hiv$child_tmpsmx == 2] <- "No"
+table(chi_hiv$tmpsmx)
+
+#Don't need new variable, but how many kids had received abx for acute infxn?
+table(chi_hiv$abx)
+
+#I want the most recent viral load values for my analysis. Will try creating a new variable to ID which value is more recent first:
+#missing 3 vl1 and 14vl2's
+chi_hiv$newest_vL <- NA
+chi_hiv$newest_vL [chi_hiv$child_vl1_weeks < chi_hiv$child_vl2_weeks] <- 1
+chi_hiv$newest_vL [chi_hiv$child_vl2_weeks < chi_hiv$child_vl1_weeks] <- 2
+chi_hiv$newest_vL [chi_hiv$child_vl2_weeks < 0] <- 1  #we want to include the viral loads collected BEFORE enrollment where possible
+chi_hiv$newest_vL [is.na(chi_hiv$child_vl_2)] <- 1    #if we are missing vl_2, we will use vl_1
+chi_hiv$newest_vL [is.na(chi_hiv$child_vl_1) & is.na(chi_hiv$child_vl_2)] <- NA
+table(chi_hiv$newest_vL)
+
+#Next, can we pull the viral load that was most recent using our newest_vL variable?
+#source: https://stackoverflow.com/questions/67944727/creating-new-variable-by-selecting-column-based-on-value-of-another-column
+#Need to do this with rows that have values (aka need to exclude the NA viral load children for this to work)
+#For future phyloseq analyses: will need to remove B-04, B-07, B-52
+chi_viral <- subset(chi_hiv, !is.na(newest_vL))
+chi_viral$Var1 <- chi_viral$child_vl_1
+chi_viral$Var2 <- chi_viral$child_vl_2
+
+chi_viral <- chi_viral %>% rowwise() %>%
+  mutate(newest_vlnum = get(paste0('Var', newest_vL)))
+#now we have a dataframe of the 41 children with viral load measurements and 1 column containing the most recent viral loads for each
+summary(chi_viral$newest_vlnum)
+table(chi_viral$newest_vlnum) #27 with viral suppression, 14 without viral suppression
+
+#make new variable for viral suppression or not, with vL < 400 = suppressed
+chi_viral$vl_suppr <- NA
+chi_viral$vl_suppr [chi_viral$newest_vlnum < 400] <- "1"
+chi_viral$vl_suppr [chi_viral$newest_vlnum >= 400] <- "0"
+table(chi_viral$vl_suppr)
+
+#REPEAT the above steps to get date associated with most recent viral load, most recent CD4, and date a/w most recent CD4
+#Viral load collection date
+chi_viral$Var1 <- chi_viral$child_vl1_weeks
+chi_viral$Var2 <- chi_viral$child_vl2_weeks
+
+chi_viral <- chi_viral %>% rowwise() %>%
+  mutate(newest_vldate = get(paste0('Var', newest_vL)))   #now have info for when vL were checked in relation to enrollment
+
+summary(chi_viral$newest_vldate)
+
+chi_viral <- within(chi_viral, rm(Var1, Var2))
+
+#CD4
+#missing CD4 data for B-45 and B-52
+#will focus on percentages since this is what is presented for kids
+chi_hiv$newest_cd4 <- NA
+chi_hiv$newest_cd4 [chi_hiv$chi_cd4_weeks1 < chi_hiv$chi_cd4_weeks2] <- 1
+chi_hiv$newest_cd4 [chi_hiv$chi_cd4_weeks2 < chi_hiv$chi_cd4_weeks1] <- 2
+chi_hiv$newest_cd4 [chi_hiv$chi_cd4_weeks2 < 0] <- 1  #we want to include the viral loads collected BEFORE enrollment where possible
+chi_hiv$newest_cd4 [is.na(chi_hiv$chi_cd4_perc_2)] <- 1    #if we are missing cd4_2, we will use cd4_1
+chi_hiv$newest_cd4 [is.na(chi_hiv$chi_cd4_perc_1)] <- 2    #one child is missing cd4_1 but has cd4_2
+chi_hiv$newest_cd4 [is.na(chi_hiv$chi_cd4_perc_1) & is.na(chi_hiv$chi_cd4_perc_2)] <- NA
+table(chi_hiv$newest_cd4)
+
+#create new dataframe without B-45 and B-52 (aka new df with children missing CD4 data removed)
+chi_cd4 <- subset(chi_hiv, !is.na(newest_cd4))
+chi_cd4$Var1 <- chi_cd4$chi_cd4_perc_1
+chi_cd4$Var2 <- chi_cd4$chi_cd4_perc_2
+
+chi_cd4 <- chi_cd4 %>% rowwise() %>%
+  mutate(newest_cd4perc = get(paste0('Var', newest_cd4)))
+
+summary(chi_cd4$newest_cd4perc)
+table(chi_cd4$newest_cd4perc)
+
+#make new variable for immune competent CD4 or not, with CD4 percentage >=25% = immune competent
+  #d/w MK re: potentially adding a cutoff at 15% for immunosuppression, but we only have 2 kids with CD4% < 15 so will stay with 25% binary for now
+chi_cd4$cd4nL <- NA
+chi_cd4$cd4nL [chi_cd4$newest_cd4perc >=25] <- "1"
+chi_cd4$cd4nL [chi_cd4$newest_cd4perc < 25] <- "0"
+table(chi_cd4$cd4nL)  #11 kids with CD4% < 25
+
+#REPEAT the above steps to get date associated with most recent CD4
+#CD4 collection date
+chi_cd4$Var1 <- chi_cd4$chi_cd4_weeks1
+chi_cd4$Var2 <- chi_cd4$chi_cd4_weeks2
+
+chi_cd4 <- chi_cd4 %>% rowwise() %>%
+  mutate(newest_cd4date = get(paste0('Var', newest_cd4)))   #now have info for when cd4 were checked in relation to enrollment
+
+summary(chi_cd4$newest_cd4date)
+
+chi_cd4 <- within(chi_cd4, rm(Var1, Var2))
+
+#In case you need to go back and redo everything with only those children who have BOTH viral loads and CD4s:
+test <- chi_viral[c("sample_id", "newest_vlnum", "vl_suppr", "newest_vldate")]
+hiv_labs <- merge(chi_cd4, test, by="sample_id")
+remove(test)
+
+```
+#### Demographics by viral suppression and CD4 classification
+
+```{r}
+
+##################################
+#DEMOGRAPHICS BY VIRAL SUPPRESSION
+##################################
+#will look at HIV specific variables (particularly viral suppression, CD4 perc) and general vars
+#ex if you are not virally suppressed, is that a/w SES? 
+
+#Age
+hist(chi_viral$age)
+summary(chi_viral$age)
+tapply(chi_viral$age, chi_viral$vl_suppr, summary)
+wilcox.test(age ~ vl_suppr, data = chi_viral) #P=0.19 with warning: cannot compute exact p-value with ties
+t.test(age ~ vl_suppr, data = chi_viral)  #P=0.17
+
+#Sex
+table(chi_viral$sex)  #22 girls
+table(chi_viral$sex, chi_viral$vl_suppr)
+prop.table(table(chi_viral$sex, chi_viral$vl_suppr), 2)
+summary(table(chi_viral$sex, chi_viral$vl_suppr)) #P=0.74
+
+#Maternal age
+hist(chi_viral$mat_age2)  #looks quite normal, but will still present median and IQR for consistency
+summary(chi_viral$mat_age2)
+tapply(chi_viral$mat_age2, chi_viral$vl_suppr, summary)
+wilcox.test(mat_age2 ~ vl_suppr, data = chi_viral) #P=0.15
+t.test(mat_age2 ~ vl_suppr, data = chi_viral) #P=0.11
+
+#Season
+table(chi_viral$season)  
+table(chi_viral$season, chi_viral$vl_suppr)
+prop.table(table(chi_viral$season, chi_viral$vl_suppr), 2)
+summary(table(chi_viral$season, chi_viral$vl_suppr))  #P=0.44
+
+#Maternal education
+table(chi_viral$mat_educ2)  
+table(chi_viral$mat_educ2, chi_viral$vl_suppr)
+prop.table(table(chi_viral$mat_educ2, chi_viral$vl_suppr), 2)
+summary(table(chi_viral$mat_educ2, chi_viral$vl_suppr))  
+fisher.test(chi_viral$mat_educ2, chi_viral$vl_suppr) #P=0.34
+
+#Electricity
+table(chi_viral$elec)  #33 kids have electricity
+table(chi_viral$elec, chi_viral$vl_suppr)
+prop.table(table(chi_viral$elec, chi_viral$vl_suppr), 2)
+summary(table(chi_viral$elec, chi_viral$vl_suppr))
+fisher.test(chi_viral$elec, chi_viral$vl_suppr) #P=1.0
+
+#Wood
+table(chi_viral$wood)  #25 kids live in wood-burning households
+table(chi_viral$wood, chi_viral$vl_suppr)
+prop.table(table(chi_viral$wood, chi_viral$vl_suppr), 2)
+summary(table(chi_viral$wood, chi_viral$vl_suppr))
+fisher.test(chi_viral$wood, chi_viral$vl_suppr) #P=0.18
+
+#Num household members
+hist(chi_viral$hhsize)
+summary(chi_viral$hhsize)
+tapply(chi_viral$hhsize, chi_viral$vl_suppr, summary)
+wilcox.test(hhsize ~ vl_suppr, data = chi_viral) #P=0.97 with warning: cannot compute exact p-value with ties
+t.test(hhsize ~ vl_suppr, data = chi_viral) #P=0.68
+
+#antibiotics
+table(chi_viral$abx)  #6 kids received abx
+table(chi_viral$abx, chi_viral$vl_suppr)
+prop.table(table(chi_viral$abx, chi_viral$vl_suppr), 2)
+fisher.test(chi_viral$abx, chi_viral$vl_suppr) #P=0.39
+
+#Clinic in past 3 months
+table(chi_viral$clinic)  #11 kids with clinic visit
+table(chi_viral$clinic, chi_viral$vl_suppr)
+prop.table(table(chi_viral$clinic, chi_viral$vl_suppr), 2)
+fisher.test(chi_viral$clinic, chi_viral$vl_suppr) #P=0.46
+
+#URI in past 1 month
+table(chi_viral$uri_rec2)  #18 kids with recent URI
+table(chi_viral$uri_rec2, chi_viral$vl_suppr)
+prop.table(table(chi_viral$uri_rec2, chi_viral$vl_suppr), 2)
+summary(table(chi_viral$uri_rec2, chi_viral$vl_suppr)) #P=0.92
+
+#URI currently (don't need both this and uri recent in table 1; need to choose)
+table(chi_viral$uri_cur2)  #16 kids with current URI
+table(chi_viral$uri_cur2, chi_viral$vl_suppr)
+prop.table(table(chi_viral$uri_cur2, chi_viral$vl_suppr), 2)
+summary(table(chi_viral$uri_cur2, chi_viral$vl_suppr)) #P=0.75
+
+#Hospital in past 3 months -->> 4 children hospitalized, all 4 HIV+
+#*MENTION IN MANUSCRIPT
+table(chi_viral$hosp)  #3 kids hospitalized who had viral load data
+table(chi_viral$hosp, chi_viral$vl_suppr) #2/3 kids not virally suppressed
+prop.table(table(chi_viral$hosp, chi_viral$vl_suppr), 2)
+fisher.test(chi_viral$hosp, chi_viral$vl_suppr) #P=0.26 (but numbers are SO SMALL)
+
+#PCV doses
+table(chi_viral$pcv)  
+table(chi_viral$pcv, chi_viral$vl_suppr)
+prop.table(table(chi_viral$pcv, chi_viral$vl_suppr), 2)
+fisher.test(chi_viral$pcv, chi_viral$vl_suppr) #P=1.0
+
+#HiB
+table(chi_viral$dpt)  
+table(chi_viral$dpt, chi_viral$vl_suppr)
+prop.table(table(chi_viral$dpt, chi_viral$vl_suppr), 2)
+fisher.test(chi_viral$dpt, chi_viral$vl_suppr) #P=1.0
+
+#TMP-SMX
+table(chi_viral$tmpsmx)  
+table(chi_viral$tmpsmx, chi_viral$vl_suppr)
+prop.table(table(chi_viral$tmpsmx, chi_viral$vl_suppr), 2)
+summary(table(chi_viral$tmpsmx, chi_viral$vl_suppr))  
+fisher.test(chi_viral$tmpsmx, chi_viral$vl_suppr) #P=0.17
+
+##########################################
+#DEMOGRAPHICS BY CD4 STATUS (< vs >/= 25%)  
+##########################################
+#Age
+hist(chi_cd4$age)
+summary(chi_cd4$age)
+tapply(chi_cd4$age, chi_cd4$cd4nL, summary)
+wilcox.test(age ~ cd4nL, data = chi_cd4) #P=0.10 with warning: cannot compute exact p-value with ties
+t.test(age ~ cd4nL, data = chi_cd4)  #P=0.10
+
+#Sex
+table(chi_cd4$sex)  #23 girls
+table(chi_cd4$sex, chi_cd4$cd4nL)
+prop.table(table(chi_cd4$sex, chi_cd4$cd4nL), 2)
+summary(table(chi_cd4$sex, chi_cd4$cd4nL)) #P=0.99
+
+#Maternal age
+hist(chi_cd4$mat_age2)
+summary(chi_cd4$mat_age2)
+tapply(chi_cd4$mat_age2, chi_cd4$cd4nL, summary)
+wilcox.test(mat_age2 ~ cd4nL, data = chi_cd4) #P=0.31
+t.test(mat_age2 ~ cd4nL, data = chi_cd4)  #P=0.60
+
+#Season
+table(chi_cd4$season) 
+table(chi_cd4$season, chi_cd4$cd4nL)
+prop.table(table(chi_cd4$season, chi_cd4$cd4nL), 2)
+fisher.test(chi_cd4$season, chi_cd4$cd4nL)  #P=1.0
+
+#Maternal education
+table(chi_cd4$mat_educ2) 
+table(chi_cd4$mat_educ2, chi_cd4$cd4nL)
+prop.table(table(chi_cd4$mat_educ2, chi_cd4$cd4nL), 2)
+fisher.test(chi_cd4$mat_educ2, chi_cd4$cd4nL)  #P=1.0
+
+#Electricity
+table(chi_cd4$elec) 
+table(chi_cd4$elec, chi_cd4$cd4nL)
+prop.table(table(chi_cd4$elec, chi_cd4$cd4nL), 2)
+fisher.test(chi_cd4$elec, chi_cd4$cd4nL)  #P=0.68
+
+#Wood
+table(chi_cd4$wood) #26 kids from wood-burning households
+table(chi_cd4$wood, chi_cd4$cd4nL)
+prop.table(table(chi_cd4$wood, chi_cd4$cd4nL), 2)
+fisher.test(chi_cd4$wood, chi_cd4$cd4nL)  #P=0.16
+
+#Num household members
+hist(chi_viral$hhsize)
+summary(chi_viral$hhsize)
+tapply(chi_viral$hhsize, chi_viral$vl_suppr, summary)
+wilcox.test(hhsize ~ vl_suppr, data = chi_viral) #P=0.97 with warning: cannot compute exact p-value with ties
+t.test(hhsize ~ vl_suppr, data = chi_viral) #P=0.68
+
+#antibiotics
+table(chi_cd4$abx) #7 kids received abx
+table(chi_cd4$abx, chi_cd4$cd4nL)
+prop.table(table(chi_cd4$abx, chi_cd4$cd4nL), 2)
+fisher.test(chi_cd4$abx, chi_cd4$cd4nL)  #P=0.009
+
+#Clinic in past 3 months
+table(chi_cd4$clinic) #11 kids with clinic visit
+table(chi_cd4$clinic, chi_cd4$cd4nL)
+prop.table(table(chi_cd4$clinic, chi_cd4$cd4nL), 2)
+fisher.test(chi_cd4$clinic, chi_cd4$cd4nL)  #P=0.12
+
+#URI in past 1 month
+table(chi_cd4$uri_rec2) #19 kids with recent URI
+table(chi_cd4$uri_rec2, chi_cd4$cd4nL)
+prop.table(table(chi_cd4$uri_rec2, chi_cd4$cd4nL), 2)
+fisher.test(chi_cd4$uri_rec2, chi_cd4$cd4nL)  #P=0.0008
+
+#URI currently (don't need both this and uri recent in table 1; need to choose)
+table(chi_cd4$uri_cur2) #16 kids with current URI
+table(chi_cd4$uri_cur2, chi_cd4$cd4nL)
+prop.table(table(chi_cd4$uri_cur2, chi_cd4$cd4nL), 2)
+fisher.test(chi_cd4$uri_cur2, chi_cd4$cd4nL)  #P=0.07
+
+#Hospital in past 3 months -->> 4 children hospitalized, all 4 HIV+
+#*MENTION IN MANUSCRIPT
+table(chi_cd4$hosp) 
+table(chi_cd4$hosp, chi_cd4$cd4nL)  #3 of 4 kids had CD4 < 25%
+prop.table(table(chi_cd4$hosp, chi_cd4$cd4nL), 2)
+fisher.test(chi_cd4$hosp, chi_cd4$cd4nL)  #P=0.05 (numbers are SO SMALL though)
+
+#PCV doses
+table(chi_cd4$pcv) #35 kids fully vaxed
+table(chi_cd4$pcv, chi_cd4$cd4nL)
+prop.table(table(chi_cd4$pcv, chi_cd4$cd4nL), 2)
+fisher.test(chi_cd4$pcv, chi_cd4$cd4nL)  #P=0.48
+
+#HiB
+table(chi_cd4$dpt) #34 kids fully vaxed 
+table(chi_cd4$dpt, chi_cd4$cd4nL)
+prop.table(table(chi_cd4$dpt, chi_cd4$cd4nL), 2)
+fisher.test(chi_cd4$dpt, chi_cd4$cd4nL)  #P=1.0
+
+#TMPSMX use
+table(chi_cd4$tmpsmx) #15 kids on TMP-SMX 
+table(chi_cd4$tmpsmx, chi_cd4$cd4nL)
+prop.table(table(chi_cd4$tmpsmx, chi_cd4$cd4nL), 2)
+fisher.test(chi_cd4$tmpsmx, chi_cd4$cd4nL)  #P=0.03; more kids with low CD4 on TMP-SMX
+
+###COME BACK TO: TMP-SMX GUIDELINES IN KIDS
+```
+
+**Summary:** no significant association identified b/w viral suppression and SES, clinical factors, BUT kids with low CD4: higher percent received abx and TMP-SMX and reported recent URI
+- will incorporate abx and rec_uri into maaslin2 model below
+
+#### Alpha diversity
+```{r}
+#Create dataframe with diversity indices for each specimen using HIV pseq object
+diversity1 <- estimate_richness(hiv, measures = c("Shannon", "Simpson", "Chao1", "Observed"))
+
+setDT(diversity1, keep.rownames = TRUE)[]
+colnames(diversity1) <- c("sample_id", "Observed", "Chao1", "se.chao1", "Shannon", "Simpson")
+rownames(diversity1) <- diversity1$sample_id
+diversity <- merge(diversity1, chi_viral, by="sample_id")
+div_cd4 <- merge(diversity1, chi_cd4, by="sample_id")
+div_all <- merge(diversity1, chi_hiv, by="sample_id")
+
+#################
+#OBSERVED SPECIES
+#################
+
+#How many species on average per sample?
+hist(diversity$Observed)
+summary(diversity$Observed) 
+sd(diversity$Observed)
+#Median (IQR) # spec: 113 (67, 201)
+#Mean (SD): 163 (173)
+
+#what does it look like by TMP-SMX use? NOTE: N=44
+tapply(div_all$Observed, div_all$tmpsmx, summary)   
+wilcox.test(Observed ~ tmpsmx, data = div_all)  #P=0.42 with warning (ties)
+
+#what does it look like by viral supp? NOTE: N=41
+tapply(diversity$Observed, diversity$vl_suppr, summary)   
+wilcox.test(Observed ~ vl_suppr, data = diversity)  #P=0.87 with warning (ties)
+
+########
+#SHANNON
+########
+
+#Is our SDI data normally distributed? 
+shapiro.test(diversity$Shannon)  #yes! P=0.42
+histogram(diversity$Shannon)  #looks good
+qqnorm(diversity$Shannon, pch = 1, frame = FALSE)
+qqline(diversity$Shannon, col = "steelblue", lwd = 2)
+
+#Shannon diversity median and IQR for all samples
+summary(diversity$Shannon)
+sd(diversity$Shannon)
+#Median (IQR) SDI: 1.73 (1.44, 2.26)
+#Mean (SD) 1.78 (0.65)  
+
+#Viral suppression
+tapply(diversity$Shannon, diversity$vl_suppr, summary)
+t.test(Shannon ~ vl_suppr, data = diversity)        #P=0.62
+
+#TMP-SMX use
+tapply(div_all$Shannon, div_all$tmpsmx, summary)
+t.test(Shannon ~ tmpsmx, data = div_all)  #P=0.28
+
+#CD4 (continuous and binary)
+summary(div <- lm(Shannon ~ newest_cd4perc, data = div_cd4))  #P=0.09
+tapply(div_cd4$Shannon, div_cd4$cd4nL, summary)
+t.test(Shannon ~ cd4nL, data = div_cd4)  #P=0.89
+
+#Abx use
+tapply(div_all$Shannon, div_all$abx, summary)
+t.test(Shannon ~ abx, data = div_all)  #P=0.99
+
+#MULTIVARIABLE MODEL
+summary(div_mv <- lm(Shannon ~ vl_suppr + tmpsmx, data = diversity))
+  #with abx
+summary(div_mv <- lm(Shannon ~ vl_suppr + tmpsmx + abx, data = diversity))
+
+######
+#CHAO1
+######
+
+#Is our Chao1 data normally distributed? 
+shapiro.test(diversity$Chao1)  #no, because p<0.05; also looks skewed on histogram and QQ is wonky
+histogram(diversity$Chao1)
+qqnorm(diversity$Chao1, pch = 1, frame = FALSE)
+qqline(diversity$Chao1, col = "steelblue", lwd = 2)
+
+#What does it look like if we log transform it? Will this allow for parametric testing?
+diversity1$Chao1_log <- log(diversity1$Chao1)
+#NOW RE-RUN ALL DIVERSITY SUB-DATAFRAMES ABOVE (CD4, VL, ALL)
+shapiro.test(diversity$Chao1_log) 
+histogram(diversity$Chao1_log)
+qqnorm(diversity$Chao1_log, pch = 1, frame = FALSE)
+qqline(diversity$Chao1_log, col = "steelblue", lwd = 2)
+#Looks better! Can use t.test and linear regression on transformed data
+
+#Log transform for all diversity df (n=44 for all HIV+ kids, n=42 for CD4 kids)
+div_all$Chao1_log <- log(div_all$Chao1)
+div_cd4$Chao1_log <- log(div_cd4$Chao1)
+
+#Chao1 median and IQR for all samples
+summary(diversity$Chao1)
+sd(diversity$Chao1)
+#Median (IQR) Chao1: 109 (63, 205)
+#Mean (SD) 216 (300.4)
+
+#Viral suppression
+tapply(diversity$Chao1_log, diversity$vl_suppr, summary)
+t.test(Chao1_log ~ vl_suppr, data = diversity)        #P=0.96
+
+#TMP-SMX use (N=44)
+tapply(div_all$Chao1_log, div_all$tmpsmx, summary)
+t.test(Chao1_log ~ tmpsmx, data = div_all)  #P=0.52
+
+#CD4 (continuous and binary)
+summary(div <- lm(Chao1_log ~ newest_cd4perc, data = div_cd4))  #P=0.65
+tapply(div_cd4$Chao1_log, div_cd4$cd4nL, summary)
+t.test(Chao1_log ~ cd4nL, data = div_cd4)  #P=0.25
+
+#abx (N=44)
+tapply(div_all$Chao1_log, div_all$abx, summary)
+t.test(Chao1_log ~ abx, data = div_all)  #P=0.92
+
+#MULTIVARIABLE MODEL
+summary(div_mv <- lm(Chao1_log ~ vl_suppr + tmpsmx, data = diversity))
+  #including abx
+summary(div_mv <- lm(Chao1_log ~ vl_suppr + tmpsmx + abx, data = diversity))
+
+#Skipping boxplots
+remove(div, div_all, div_cd4, diversity, diversity1)
+
+```
+
+
+#### Beta diversity: PCoA plots
+
+```{r}
+#remove kids missing viral load data: B-04, B-07, B-52 and add chi_viral as sample data
+vl <- hiv
+chi_viral <- as.data.frame(chi_viral)
+row.names(chi_viral) <- chi_viral$sample_id
+chi_viral <- sample_data(chi_viral)
+head(chi_viral)
+vl <- merge_phyloseq(vl, chi_viral)
+#now see if it worked:
+bloop <- data.frame(sample_data(vl))
+#not working for some reason on 6/2/22; merged new sample data with pseq FIRST, then removed samples and it worked
+#success!
+remove(bloop)
+vl = subset_samples(vl, sample_id != "B.04.CHI" & sample_id != "B.07.CHI" & sample_id != "B.52.CHI")
+chi_viral <- data.frame(sample_data(vl))
+
+#do the same to create a CD4 pseq object to plot
+cd4 <- hiv
+chi_cd4 <- as.data.frame(chi_cd4)
+row.names(chi_cd4) <- chi_cd4$sample_id
+chi_cd4 <- sample_data(chi_cd4)
+head(chi_cd4)
+cd4 <- merge_phyloseq(cd4, chi_cd4)
+#now see if it worked:
+bloop <- data.frame(sample_data(cd4))
+#success!
+remove(bloop)
+#missing: B-45 and B-52
+cd4 = subset_samples(cd4, sample_id != "B.45.CHI" & sample_id != "B.52.CHI")
+chi_cd4 <- data.frame(sample_data(cd4))
+
+#COME BACK TO: use same steps to make hiv_labs pseq that has n=40 and both vl and CD4 variables
+labs <- hiv
+row.names(hiv_labs) <- hiv_labs$sample_id
+hiv_labs <- sample_data(hiv_labs)
+labs <- merge_phyloseq(labs, hiv_labs)
+#now see if it worked:
+bloop <- data.frame(sample_data(labs))
+#success!
+remove(bloop)
+#missing: B-45 and B-52
+labs = subset_samples(labs, sample_id != "B.04.CHI" & sample_id != "B.07.CHI" & sample_id != "B.45.CHI" & sample_id != "B.52.CHI")
+hiv_labs <- data.frame(sample_data(labs))
+
+#Now transform our pseq objects
+vl_clr <- transform(vl, "clr")
+cd4_clr <- transform(cd4, "clr")
+hiv_clr <- transform(hiv, "clr")
+
+#PCoA plots#
+#VIRAL SUPPRESSION
+clr_pcoa <- ordinate(vl_clr, method = "PCoA", distance = "euclidean")
+lines <- c("dashed", "dashed")
+clr_vl <- plot_ordination(vl_clr, clr_pcoa, color = "vl_suppr", title = "Euclidean PCoA Plot by Viral Suppression") +
+  geom_point(size = 2) + theme_classic() + theme(
+    plot.title = element_text(size = 14, hjust = 0.5),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    legend.background = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)) +
+  scale_color_manual(values=c('#800000FF','#155F83FF'))+
+  stat_ellipse(aes(linetype=vl_suppr), geom="polygon", alpha=0, type="t", level=0.8, size=0.7) +
+  xlab("PC1 (13.4%)") + ylab("PC2 (12%)") +
+  scale_linetype_manual(values=lines)
+png(file="clr_vlsuppr.png",
+    width = 5, height = 4, units = 'in', res=600)
+clr_vl
+dev.off()
+
+#CD4 (binary) using cd4_clr
+###AUG 3 UPDATE: change labels: so will need to create new variable and import back into cd4_clr
+chi_cd4$cd4cat <- NA
+chi_cd4$cd4cat [chi_cd4$cd4nL=="1"] <- "Normal CD4"
+chi_cd4$cd4cat [chi_cd4$cd4nL=="0"] <- "Low CD4"
+table(chi_cd4$cd4cat)
+class(chi_cd4$cd4cat)
+chi_cd4$cd4cat <- as.factor(chi_cd4$cd4cat)
+chi_cd4$cd4cat <- reorder(chi_cd4$cd4cat, new.order=c("Low CD4", "Normal CD4"))
+
+#Import back into pseq (source: https://jacobrprice.github.io/2017/08/26/phyloseq-to-vegan-and-back.html)
+sample_data(cd4_clr) <- as.data.frame(chi_cd4)
+#now see if it worked:
+bloop <- data.frame(sample_data(cd4_clr))
+table(bloop$cd4cat)
+#success!
+remove(bloop)
+
+clr_pcoa <- ordinate(cd4_clr, method = "PCoA", distance = "euclidean")
+lines <- c("dashed", "dashed")
+clr_cd4 <- plot_ordination(cd4_clr, clr_pcoa, color = "cd4cat") +
+  geom_point(size = 2) + theme_classic() + theme(
+    plot.title = element_text(size = 14, hjust = 0.5),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    legend.background = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)) +
+  scale_color_manual(values=c('#800000FF','#155F83FF'))+
+  stat_ellipse(aes(linetype=cd4cat), geom="polygon", alpha=0, type="t", level=0.8, size=0.7) +
+  xlab("PC1 (13.4%)") + ylab("PC2 (11.5%)") +
+  scale_linetype_manual(values=lines)
+# png(file="clr_cd4nl.png",
+#     width = 6, height = 4, units = 'in', res=600)
+clr_cd4
+p3 <- clr_cd4
+p3
+# dev.off()
+
+#TMP-SMX use
+clr_tmpsmx <- plot_ordination(cd4_clr, clr_pcoa, color = "tmpsmx", title = "Euclidean PCoA Plot by TMP-SMX use") +
+  geom_point(size = 2) + theme_classic() + theme(
+    plot.title = element_text(size = 14, hjust = 0.5),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    legend.background = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)) +
+  scale_color_manual(values=c('#800000FF','#155F83FF'))+
+  stat_ellipse(aes(linetype=tmpsmx), geom="polygon", alpha=0, type="t", level=0.8, size=0.7) +
+  xlab("PC1 (13.4%)") + ylab("PC2 (12%)") +
+  scale_linetype_manual(values=lines)
+png(file="clr_tmpsmx.png",
+    width = 5, height = 4, units = 'in', res=600)
+clr_tmpsmx
+dev.off()
+```
+
+#### Beta diversity: Permanova
+
+```{r}
+#PERMANOVA: viral load & TMP-SMX
+otu <- as.data.frame(otu_table(vl_clr, taxa_are_rows=TRUE))
+#Need species in columns and observations in rows: transpose using t() function and save as a dataframe
+#Source: https://github.com/edamame-course/2015-tutorials/blob/master/final/Ashley_Intro_to_R.md
+otu_trans <- data.frame(t(otu))
+chi_viral <- data.frame(sample_data(vl_clr))
+BC.dist=vegdist(otu_trans, method="euclidean")
+
+#viral suppression
+adonis(BC.dist ~ vl_suppr, data = chi_viral, permutations = 1000)
+#No significant difference by HIV status among children (P = 0.83)
+  #viral suppression + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis2(BC.dist ~ vl_suppr + age, data = chi_viral, permutations = 1000)
+#No significant difference by HIV status among children (P = 0.82) or age (P=0.15)
+
+#TMPSMX use (n=41)
+adonis(BC.dist ~ tmpsmx, data = chi_viral, permutations = 1000)
+#Trend towards difference in overall composition by tmp-smx use but did not reach signif (P = 0.07, R2 = 0.034)
+  #TMPSMX + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis(BC.dist ~ tmpsmx + age, data = chi_viral, permutations = 1000)
+#No significant difference by TMPSMX among children (P = 0.07) or age (P=0.22)
+
+#PERMANOVA: CD4 (both continuous and binary), TMPSMX, abx
+otu <- as.data.frame(otu_table(cd4_clr, taxa_are_rows=TRUE))
+#Need species in columns and observations in rows: transpose using t() function and save as a dataframe
+#Source: https://github.com/edamame-course/2015-tutorials/blob/master/final/Ashley_Intro_to_R.md
+otu_trans <- data.frame(t(otu))
+chi_cd4 <- data.frame(sample_data(cd4_clr))
+BC.dist=vegdist(otu_trans, method="euclidean")
+
+#CD4 (continuous)
+adonis(BC.dist ~ newest_cd4perc, data = chi_cd4, permutations = 1000)
+#Trend towards difference in overall composition by CD4 percentage but did not reach signif (P = 0.052, R2 = 0.035)
+    #CD4 + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis(BC.dist ~ newest_cd4perc + age, data = chi_cd4, permutations = 1000)
+#Trend towards difference in overall composition by CD4 percentage but did not reach signif (P = 0.06, R2 = 0.035); age P=0.4
+
+#CD4 (binary)
+adonis(BC.dist ~ cd4nL, data = chi_cd4, permutations = 1000)  #P=0.01, R = 0.042
+  #CD4 + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis2(BC.dist ~ cd4nL + age, data = chi_cd4, permutations = 1000) #P=0.01, R = 0.042 for CD4; age P = 0.20
+
+#TMPSMX use (n=42)  #NOTE: at some point adonis got deprecated so had to switch to adonis2 for updates
+adonis(BC.dist ~ tmpsmx, data = chi_cd4, permutations = 1000) #P=0.12
+    #TMPSMX + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis2(BC.dist ~ tmpsmx + age, data = chi_cd4, permutations = 1000) #P=0.13, R2=0.031
+
+#abx (n=42) with age
+adonis2(BC.dist ~ abx + age, data = chi_cd4, permutations = 1000) #P=0.19, R2=0.029
+
+#PERMANOVA: TMP-SMX and abx for all children with HIV (n=44)
+otu <- as.data.frame(otu_table(hiv_clr, taxa_are_rows=TRUE))
+otu_trans <- data.frame(t(otu))
+BC.dist=vegdist(otu_trans, method="euclidean")
+  #TMP-SMX
+adonis2(BC.dist ~ tmpsmx + age, data = chi_hiv, permutations = 1000) #P=0.07, R2=0.032
+  #ABX
+adonis2(BC.dist ~ abx + age, data = chi_hiv, permutations = 1000) #P=0.20, R2=0.028
+
+#clean up
+remove(hiv_clr, cd4_clr, vl_clr, otu, otu_trans, clr_cd4, clr_pcoa, clr_tmpsmx, clr_vl)
+remove(BC.dist, lines)
+```
+
+#### Relative abundance plots
+
+```{r}
+##############################
+#RELATIVE ABUNDANCE PLOTS: CD4
+##############################
+#Because we see a compositional difference by binary CD4, we will generate relative abundance plots for this pseq and for viral load
+chi.rel <- transform_sample_counts(cd4, function(Abundance) Abundance/sum(Abundance))
+sample_sums(chi.rel)  # This is a sanity check to make sure that relative abundance was calculated for each sample prior to pooling data
+#All samples add to 1
+melted_df <- psmelt(chi.rel)
+#clean up melted_df
+melted_df <- within(melted_df, rm(sib_weight, sib_sex, sib_height, sib_muac, sib_race, sib_bfeed_1,
+                                  sib_bfeed_2, sib_uri_recent, sib_uri_current, sib_pcr_1, sib_pcr_2,
+                                  sib_bcg, sib_hepb, sib_clinic, sib_clinic_dx___5, sib_clinic_dx_oth,
+                                  sib_hosp, sib_meds, sib_meds_name, sibmo, sibyr, sib_vl1_weeks, sib_vl_weeks2,
+                                  sib_med_days, sib_dpt, sib_pcv, sib_rota, sib_polio, sib_measles, sib_age))
+melted_df <- within(melted_df, rm(samp_storage, enr_clinic, enr_clinic_other, mat_np))
+
+# Create dataframes with overall relative abundances of phyla and genera
+melted_df$Phylum <- as.character(melted_df$Phylum)
+phyla_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum), FUN=sum)
+phyla_abundances$x <- (phyla_abundances$x)/(nsamples(chi.rel))
+names(phyla_abundances)[names(phyla_abundances) == 'x'] <- 'phyla_Ab'
+sum(phyla_abundances$phyla_Ab)    # Should sum to 1 (sum of relative abundances of phyla)
+nrow(phyla_abundances)            # Corresponds to # of unique phyla: 116
+
+melted_df$Genus <- as.character(melted_df$Genus)
+genus_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,
+                                                           OTU=melted_df$OTU), FUN=mean)
+genus_abundances <- aggregate(genus_abundances$x, by=list(Phylum=genus_abundances$Phylum,
+                                                          Genus=genus_abundances$Genus), FUN=sum)
+names(genus_abundances)[names(genus_abundances) == 'x'] <- 'genus_Ab'
+sum(genus_abundances$genus_Ab)    # Should sum to 1 (sum of relative abundances of genera)
+nrow(genus_abundances)            # Corresponds to # of unique genera: 2146
+abundances <- merge(genus_abundances, phyla_abundances, by="Phylum")
+
+melted_df$Species <- as.character(melted_df$Species)
+species_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,Species=melted_df$Species,
+                                                             OTU=melted_df$OTU), FUN=mean)
+species_abundances <- aggregate(species_abundances$x, by=list(Phylum=species_abundances$Phylum,
+                                                              Genus=species_abundances$Genus, Species=species_abundances$Species), FUN=sum)
+names(species_abundances)[names(species_abundances) == 'x'] <- 'species_Ab'
+sum(species_abundances$species_Ab)    # Should sum to 1 (sum of relative abundances of genera)
+nrow(species_abundances)            # Corresponds to # of unique species: 6708 ***WHY is this different from 6709?###
+abundances <- merge(abundances, species_abundances, by=c("Phylum", "Genus"))
+  #merging on Phylum AND Genus gets rid of the phylum.x and phylum.y problem we were having earlier
+
+phyla_abundances <- arrange(phyla_abundances, desc(phyla_Ab)) 
+# Create a df with the top 5 phyla
+TOPPhyla <- unique(phyla_abundances$Phylum[1:5])
+phylum_df <- phyla_abundances[phyla_abundances$Phylum %in% TOPPhyla,]
+phylum_df$Phylum <- factor(phylum_df$Phylum, levels = phylum_df$Phylum[order(-phylum_df$phyla_Ab)])
+
+genus_abundances <- arrange(genus_abundances, desc(genus_Ab))  
+TOPGenera <- unique(genus_abundances$Genus[1:10])
+genus_df <- genus_abundances[genus_abundances$Genus %in% TOPGenera,]
+genus_df$Genus <- factor(genus_df$Genus, levels = genus_df$Genus[order(-genus_df$genus_Ab)])
+
+#create df with top 10 species
+species_abundances <- arrange(species_abundances, desc(species_Ab))  
+TOPSpecies <- unique(species_abundances$Species[1:10])
+species_df <- species_abundances[species_abundances$Species %in% TOPSpecies,]
+species_df$Species <- factor(species_df$Species, levels = species_df$Species[order(-species_df$species_Ab)])
+
+# Rename species other than top10 as "Other" in creating dataframe relative_df
+relative_df <- merge(melted_df, abundances, by=c("Genus", "Species"))
+#keep getting vector memory exhausted error; need to reboot R so will save melted_df and abundances as csv files
+#source for fix: https://stackoverflow.com/questions/51295402/r-on-macos-error-vector-memory-exhausted-limit-reached
+
+relative_df$Species[!(relative_df$Species %in% TOPSpecies)] <- "Other"
+sum(relative_df$Abundance) #sums to 42.00003 (and we have n=42 kids...?)
+table(relative_df$Species)
+
+#To generate color palette of 11 colors used previously: 
+library(RColorBrewer)
+library(scales)
+chisp2 <- c("#293352", "#800000FF", "#767676FF", "#FFA319FF", "#8A9045FF", "#155F83FF", "#C16622FF", "#4D004B", "#8F3931FF", "#58593FFF", "#350E20FF")
+show_col(chisp2)
+
+#CREATING RELATIVE ABUNDANCE PLOT
+relative_df$subject_abundances <- (relative_df$Abundance)/(length(unique(relative_df$Sample))) 
+#Clarify CD4 cutoff 
+relative_df$cd4cat <- NA
+relative_df$cd4cat [relative_df$cd4nL==1] <- "Normal CD4"
+relative_df$cd4cat [relative_df$cd4nL==0] <- "Low CD4"
+table(relative_df$cd4cat)
+class(relative_df$cd4cat)
+relative_df$cd4cat <- as.factor(chi_cd4$cd4cat)
+relative_df$cd4cat <- reorder(chi_cd4$cd4cat, new.order=c("Low CD4", "Normal CD4"))
+
+relative_df$Species <- factor(relative_df$Species)
+relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Micrococcus luteus", "Moraxella catarrhalis", "Moraxella lincolnii",  "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
+
+subject_plot_cd4 <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=cd4cat, y=subject_abundances, fill=Species)) + geom_bar(stat="identity", position="fill") + theme_classic() + theme(legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Micrococcus luteus*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  ylab("Mean relative abundance") 
+
+p4 <- plot(subject_plot_cd4)
+
+#NOW: combine all using patchwork vs cowplot (great ref: https://wilkelab.org/cowplot/articles/aligning_plots.html)
+#For future reference: p1 and p2 code is in Fog Kaiju 5-26-22.R file, p3 and p4 are here
+#After MK feedback, removed x axis titles for B and D, only capitalized "Mean" in y axis titles for B&D, and increased width of A&C (so ratio from 1, 1.65 to 1, 1.55)
+fig2 <- plot_grid(p1, p2, p3, p4, labels = "AUTO", nrow = 2, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1.5))
+
+fig2
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2NEW.pdf", plot = fig2, dpi = 300, height = 9, width = 11)
 
 ```
 
@@ -2480,28 +3578,12 @@ relative_df$hiv2 <- as.factor(relative_df$hiv2)
 relative_df$hiv2 <- reorder(relative_df$hiv2, new.order=c("Immunocompetent CLWH", "HEU children", "HUU children"))
 relative_df$Species <- factor(relative_df$Species)
 relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Micrococcus luteus", "Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
-subject_plot2 <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) +   geom_bar(stat="identity", position="fill") + theme_classic() + theme(
-  legend.position="right", legend.text=element_text(size=10, face="italic"), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) +  
-  scale_fill_manual(values = chisp2) +
+spec_eiuu <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) +   geom_bar(stat="identity", position="fill") + theme_classic() + theme(
+  legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) +  
+  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Micrococcus luteus*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
   ylab("Mean relative abundance") 
 
-plot(subject_plot2)
-
-#Now use cowplot to create 1 figure containing our Immunocompetent CLWH vs HEU/HUU
-fig_nlCD4_HEU_HUU <- plot_grid(clr_eiuu, subject_plot2, labels = "AUTO",  align = "h", axis = "b", rel_widths = c(1,1.5))
-
-fig_nlCD4_HEU_HUU
-
-#save as .eps
-#why are the colors all jacked in the barplot?
-ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/CD4nl_HEU_HUU.eps", width = 12, height = 4, units = "in")
-fig_nlCD4_HEU_HUU
-dev.off()
-
-png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/CD4nl_HEU_HUU.png",
-    width = 11, height = 5, units = 'in', res = 600)
-fig_nlCD4_HEU_HUU
-dev.off()
+plot(spec_eiuu)
 
 #MAASLIN 2: CLWH (immunocompetent only), HEU, HUU
 hu.filter <- filter_taxa(hucd4, function(Abundance) mean(Abundance)>=50, TRUE)
@@ -2595,7 +3677,7 @@ remove(bloop)
 clr_pcoa <- ordinate(hlowcd4_clr, method = "PCoA", distance = "euclidean")
 lines <- c("dashed", "dashed", "dashed")
 
-p5 <- plot_ordination(hlowcd4_clr, clr_pcoa, color = "hiv2") +
+clr_hlow <- plot_ordination(hlowcd4_clr, clr_pcoa, color = "hiv2") +
   geom_point(size = 0.005) + theme_classic() + theme(
     plot.title = element_text(size = 14, hjust = 0.5),
     legend.title = element_blank(),
@@ -2609,13 +3691,10 @@ p5 <- plot_ordination(hlowcd4_clr, clr_pcoa, color = "hiv2") +
   xlab("PC1 (15.4%)") + ylab("PC2 (9.2%)") +
   scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
 
-# png(file="clr_lowcd4_HEU_HUU.png",
-    # width = 5, height = 4, units = 'in', res=600)
-p5
-# dev.off()
+clr_hlow
 
 #clean up
-# remove(clr_pcoa, hlowcd4_clr, otu, otu_trans, p5, BC.dist, lines)
+# remove(clr_pcoa, hlowcd4_clr, otu, otu_trans, BC.dist, lines)
 
 #CREATE MELTED_DF FOR RELATIVE ABUNDANCE PLOTS
 chi.rel <- transform_sample_counts(hlowcd4, function(Abundance) Abundance/sum(Abundance))
@@ -2702,21 +3781,23 @@ relative_df$hiv2 <- reorder(relative_df$hiv2, new.order=c("Immunocompromised CLW
 relative_df$Species <- factor(relative_df$Species)
 relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium accolens", "Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae",  "Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
 
-subject_plot_hlow <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) + 
+spec_hlow <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) + 
   geom_bar(stat="identity", position="fill") + theme_classic() + theme(
-  legend.position="right", legend.text=element_text(size=10, face="italic"), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) +  
-  scale_fill_manual(values = chisp2) +
+  legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) +  
+  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*","*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
   ylab("Mean relative abundance") 
 
-hlow_plot <- plot(subject_plot_hlow)
+hlow_plot <- plot(spec_hlow)
 
 #NOW: make a 4 part figure combining our PCoA plots and relative abundance plots for our subanalyses of HEU and HUU children vs 1) CLWH and low CD4 and 2) CLWH and normal CD4
 
-fig_HEU_HUU_CD4_comb <- plot_grid(p5, hlow_plot, clr_eiuu, subject_plot2,labels = "AUTO", nrow = 2, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1.3))
+fig_HEU_HUU_CD4hilow <- plot_grid(clr_hlow, hlow_plot, clr_eiuu, spec_eiuu,labels = "AUTO", nrow = 2, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1.3))
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig S_CD4hilow_HEU_HUU.pdf", plot = fig_HEU_HUU_CD4hilow, dpi = 300, width = 11, height = 9)
 
 png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig S_CD4hilow_HEU_HUU.png",
-    width = 11, height = 8, units = 'in', res = 600)
-fig_HEU_HUU_CD4_comb 
+    width = 11, height = 9, units = 'in', res = 600)
+fig_HEU_HUU_CD4hilow
 dev.off()
 
 ###PULL IN MAASLIN2 AND LEFSE CODE FOR FINAL GITHUB FILE###
@@ -2842,7 +3923,7 @@ fit_data2 = Maaslin2(
 
 **Summary of findings: no difference in beta diversity or differentially abundant species among HEU children when compared to HUU children.**
 
-####HEU-CLWH Sibling Comparisons
+### HEU-CLWH Sibling Comparisons
 
 Create our limited pseq object
 ```{r}
@@ -2854,7 +3935,461 @@ sib_pair = subset_samples(pruned, sample_id == "B.09.CHI" | sample_id == "B.09.S
 
 sib <- data.frame(sample_data(sib_pair))
 
-#see 'Fog Kaiju sub-analyses 5-26-22.R' for full code, but cleaned + simplified metadata with standardized variables already created and saved:
+#cleaned + simplified metadata with standardized variables already created and saved, but will re-create to add breastfeeding given reviewer request:
+sib2 <- sib[c("sample_id", "study_id", "age", "sex", "season", "subject", "abx", "uri_rec2", "pcv", "dpt", "bfeed_1", "muac", "sib_age", "sib_sex", "sib_uri_recent", "sib_meds", "sib_meds_name", "sib_dpt", "sib_pcv", "sibmo", "sib_bfeed_1", "sib_muac")]
+
+#FIRST: create new variables for sibling abx, season, and uri_rec2
+#abx: cleaned up sib med names in separate metadata file --> "sib_abx 8-10-22"csv file
+#GO BACK AND CLEAN IN REDCAP ONCE ACCESS RE-ESTABLISHED
+abx <- read.csv("~/Library/CloudStorage/OneDrive-DukeUniversity/Fogarty coding/sib_abx 08-10-22.csv")
+#need to add NAs? 
+#drop current med_names variable from metadata and then merge with abx df by study_id
+#standardize study_id
+toString(abx$study_id)
+abx$study_id <- gsub("-", ".", abx$study_id)
+sib2$sib_meds_name <- NULL
+sib2$sib_meds <- NULL
+sib2 <- merge(sib2, abx, by ="study_id", sort = TRUE)
+table(sib2$sib_meds_name)
+sib2$sib_abx <- "No"
+sib2$sib_abx [sib2$sib_meds_name == "amoxicillin"] <- "Yes"
+table(sib2$sib_abx)
+
+#season
+#For consistency with MK: Rainy season = Nov to March. Dry season = April to Oct
+sib2$sib_seas <- "99"
+sib2$sib_seas [sib2$sibmo == 1 | sib2$sibmo == 2 | sib2$sibmo == 3 | sib2$sibmo == 11 | sib2$sibmo == 12] <- "Rainy"
+sib2$sib_seas [sib2$sibmo == 4 | sib2$sibmo == 5 | sib2$sibmo == 6 | sib2$sibmo == 7 | sib2$sibmo == 8 | sib2$sibmo == 9 | sib2$sibmo == 10] <- "Dry"
+table(sib2$sib_seas)
+
+#recent uri
+table(sib2$sib_uri_recent)
+sib2$sib_uri_rec2 <- NA
+sib2$sib_uri_rec2 [sib2$sib_uri_recent == 1] <- "Yes"
+sib2$sib_uri_rec2 [sib2$sib_uri_recent == 2] <- "No"
+table(sib2$sib_uri_rec2)
+
+#breastfeeding CLWH
+table(sib2$bfeed_1)
+sib2$bfeed_any <- NA
+sib2$bfeed_any [sib$bfeed_1 == 1 | sib$bfeed_1 == 3] <- "Yes"
+sib2$bfeed_any [sib$bfeed_1 == 2] <- "No"
+table(sib2$bfeed_any)
+
+#breastfeeding sib
+table(sib2$sib_bfeed_1) #no sibling received both breast milk and formula
+sib2$sib_bfeed_any <- NA
+sib2$sib_bfeed_any [sib2$sib_bfeed_1 == 1] <- "Yes"
+sib2$sib_bfeed_any [sib2$sib_bfeed_1 == 2] <- "No"
+table(sib2$sib_bfeed_any)
+
+###UPDATE again 9-19-23; add in height and weight for the sib pairs
+sib2$height <- sib$height
+sib2$sib_height <- sib$sib_height
+sib2$weight <- sib$weight
+sib2$sib_weight <- sib$sib_weight
+
+#NEXT: pull the variables out separately, rename the sibling variables so standardized with chi vars, then merge back together
+sib2 <- within(sib2, rm(sib_uri_recent, sibmo, sib_meds, sib_meds_name))
+sib_chi <- subset(sib2, sib2$subject == "child")
+sib_chi <- sib_chi[c("sample_id", "study_id", "age", "sex", "season", "subject", "abx", "uri_rec2", "pcv", "dpt", "bfeed_any", "muac", "height", "weight")]
+sib_sib <- subset(sib2, sib2$subject == "sib")
+sib_sib <- sib_sib[c("sample_id", "study_id", "subject", "sib_age", "sib_sex",
+              "sib_uri_rec2", "sib_abx", "sib_dpt", "sib_pcv", "sib_seas", "sib_bfeed_any", "sib_muac", "sib_height", "sib_weight")]
+#rename sib variables
+sib_sib <- rename(sib_sib, age = "sib_age")
+sib_sib <- rename(sib_sib, sex = "sib_sex")
+sib_sib <- rename(sib_sib, uri_rec2 = "sib_uri_rec2")
+sib_sib <- rename(sib_sib, abx = "sib_abx")
+sib_sib <- rename(sib_sib, dpt = "sib_dpt")
+sib_sib <- rename(sib_sib, pcv = "sib_pcv")
+sib_sib <- rename(sib_sib, season = "sib_seas")
+sib_sib <- rename(sib_sib, bfeed_any = "sib_bfeed_any")
+sib_sib <- rename(sib_sib, muac = "sib_muac")
+sib_sib <- rename(sib_sib, height = "sib_height")
+sib_sib <- rename(sib_sib, weight = "sib_weight")
+
+#combine: use rbind
+sib3 <- rbind(sib_chi, sib_sib)
+#save as csv for easier reference
+write.csv(sib3, 'sibpairs.csv')
 sib3 <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/sibpairs.csv")
 
+#now compare demographic characteristics by group AND pairwise
+  #paired comparisons for numeric data: wilcoxon paired
+  #paired comparisons for 2x2 tables: McNemar test: https://rpubs.com/kaz_yos/mcnemar
+library(exact2x2)
+#Age
+hist(sib3$age)
+summary(sib3$age)
+tapply(sib3$age, sib3$subject, summary)
+wilcox.test(age ~ subject, data = sib3, exact=FALSE) #P=0.57
+  #paired
+wilcox.test(age ~ subject, data=sib3, paired=TRUE, exact=FALSE) #P=0.59
+
+#Sex
+table(sib3$sex)  #11 girls
+table(sib3$sex, sib3$subject)
+prop.table(table(sib3$sex, sib3$subject), 2)
+fisher.test(sib3$sex, sib3$subject) #P=1.0
+  #paired
+mcnemar.test(sib3$sex, sib3$subject)  #P=0.72
+
+#Season
+table(sib3$season)  
+table(sib3$season, sib3$subject)
+prop.table(table(sib3$season, sib3$subject), 2)
+fisher.test(sib3$season, sib3$subject)  #P=1.0
+  #paired
+mcnemar.test(sib3$season, sib3$subject) #P=1.0
+
+#antibiotics
+table(sib3$abx)  #3 kids received abx
+table(sib3$abx, sib3$subject)
+prop.table(table(sib3$abx, sib3$subject), 2)
+fisher.test(sib3$abx, sib3$subject) #P=1.0
+  #paired
+mcnemar.test(sib3$abx, sib3$subject) #P=0.08
+
+#URI in past 1 month
+table(sib3$uri_rec2)  #11 kids with recent URI
+table(sib3$uri_rec2, sib3$subject)
+prop.table(table(sib3$uri_rec2, sib3$subject), 2)
+fisher.test(sib3$uri_rec2, sib3$subject)
+  #paired
+mcnemar.test(sib3$uri_rec2, sib3$subject) #P=0.75
+
+#PCV doses
+table(sib3$pcv)  
+table(sib3$pcv, sib3$subject)
+prop.table(table(sib3$pcv, sib3$subject), 2)
+fisher.test(sib3$pcv, sib3$subject) #P=1.0
+  #paired
+wilcox.test(pcv ~ subject, data=sib3, paired=TRUE, exact=FALSE) #P=0.85
+
+#HiB
+table(sib3$dpt)  
+table(sib3$dpt, sib3$subject)
+prop.table(table(sib3$dpt, sib3$subject), 2)
+fisher.test(sib3$dpt, sib3$subject) #P=1.0
+  #paired
+wilcox.test(dpt ~ subject, data=sib3, paired=TRUE, exact=FALSE) #P=0.85
+
+#Any breastfeeding
+table(sib3$bfeed_any)  #8 kids with breastfeeding
+table(sib3$bfeed_any, sib3$subject)
+prop.table(table(sib3$bfeed_any, sib3$subject), 2)
+  #paired
+mcnemar.test(sib3$bfeed_any, sib3$subject) #P=1.0
+
+#MUAC
+hist(sib3$muac)
+summary(sib3$muac)
+tapply(sib3$muac, sib3$subject, summary)
+wilcox.test(muac ~ subject, data = sib3, exact=FALSE) #P=0.05
+  #paired
+wilcox.test(muac ~ subject, data=sib3, paired=TRUE, exact=FALSE)
+  #can't run paired tests on all 9 pairs; 3 pairs missing muac in either child or sib, so will drop them and run paired wilcoxon.
+sib4 <- subset(sib4, study_id != "B.23" & study_id != "B.35" & study_id != "B.48")
+wilcox.test(muac ~ subject, data=sib4, paired=TRUE, exact=FALSE) #only with 6 pairs in analysis; p = 0.04
+
+#calculate height for age and weight for age z scores and then do paired comparison
+#sex needs to be coded as male (1) and female (2)
+sib3$sex2 <- NA
+sib3$sex2 [sib3$sex == 0] <- 1
+sib3$sex2 [sib3$sex == 1] <- 2
+table(sib3$sex)
+table(sib3$sex2) #matches up
+#age needs to be in days, not months
+sib3$age_d <- sib3$age*(30.4375) #confirmed that B-01 age and age_d match up
+
+#weight for age
+sib3 <- addWGSR(data=sib3, sex="sex2", firstPart = "weight", secondPart = "age_d", index="wfa")
+summary(sib3$wfaz) 
+hist(sib3$wfaz) #roughly normal, slight left skew
+tapply(sib3$wfaz, sib3$subject, summary)
+wilcox.test(wfaz ~ subject, data=sib3, paired=TRUE, exact=FALSE)
+
+#height for age
+sib3 <- addWGSR(data=sib3, sex="sex2", firstPart = "height", secondPart = "age_d", index="hfa")
+summary(sib3$hfaz)
+hist(sib3$hfaz) #roughly normal, slight right skew
+tapply(sib3$hfaz, sib3$subject, summary)
+wilcox.test(hfaz ~ subject, data=sib3, paired=TRUE, exact=FALSE)
+
+sib_clr <- transform(sib_pair, "clr")
+
+#################
+#Paired PERMANOVA
+#################
+otu <- as.data.frame(otu_table(sib_clr, taxa_are_rows=TRUE))
+#Need species in columns and observations in rows: transpose using t() function and save as a dataframe
+#Source: https://github.com/edamame-course/2015-tutorials/blob/master/final/Ashley_Intro_to_R.md
+otu_trans <- data.frame(t(otu))
+BC.dist=vegdist(otu_trans, method="euclidean")
+
+pairwise.adonis2(BC.dist ~ subject, data = sib3, strata = 'study_id', p.adjust.m = "BH")
+pairwise.adonis2(BC.dist ~ age, data = sib3, strata = 'study_id', p.adjust.m = "BH") #something about this code is not right; generates comparisons for all age options
+pairwise.adonis2(BC.dist ~ sex, data = sib3, strata = 'study_id', p.adjust.m = "BH") #not signif
+pairwise.adonis2(BC.dist ~ bfeed_any, data = sib3, strata = 'study_id', p.adjust.m = "BH") #not signif
+pairwise.adonis2(BC.dist ~ season, data = sib3, strata = 'study_id', p.adjust.m = "BH") #not signif
+pairwise.adonis2(BC.dist ~ uri_rec2, data = sib3, strata = 'study_id', p.adjust.m = "BH") #not signif
+
+#not sure if we can run pairwise multivariable permanova
+pairwise.adonis2(BC.dist ~ subject + season + uri_rec2 + age, data = sib3, strata = 'study_id', p.adjust.m = "BH")
+  #here, uri sx are a/w permanova stratified by study id, but why significant here and not in univariable analysis?
+
+#regular non-pairwise permanova: subject significantly associated with composition but not surprising since subject is a surrogate for HIV status (child = CLWH, sib = HEU child)
+adonis2(BC.dist ~ subject + season + uri_rec2 + age + bfeed_any, data = sib3, permutations = 1000, by = "margin")
+
 ```
+
+### Sensitivity analysis: breastfeeding
+
+- We see a strong association between HIV status and any history of breastfeeding in our cohort. Given the established association between breastfeeding and NP microbiome composition, what do our results look like if we compare NP microbiome characteristics among children who were exclusively breastfed?
+
+```{r}
+#Compare numbers of any breastfeeding to exclusive breastfeeding 
+#Create variable that combines exclusive and partial breastfeeding
+table(child$bfeed_1)
+child$bfeed_any <- NA
+child$bfeed_any [child$bfeed_1 == 1 | child$bfeed_1 == 3] <- "Yes"
+child$bfeed_any [child$bfeed_1 == 2] <- "No"
+table(child$bfeed_any)
+table(child$bfeed_any, child$hiv)
+prop.table(table(child$bfeed_any, child$hiv), 2)
+summary(table(child$bfeed_any, child$hiv))
+
+table(child$bfeed_1) #49 kids exclusively breastfed, 59 formula fed, and 35 received both breastmilk and formula
+table(child$bfeed_1, child$hiv)
+prop.table(table(child$bfeed_1, child$hiv), 2)
+# summary(table(child$bfeed_1, child$hiv))
+fisher.test(child$bfeed_1, child$hiv)
+
+summary(child$bfeed_2)
+
+#Create pseq object of only exclusively breastfed children
+chi_bf = subset_samples(chi_prune, bfeed_1 == 1) #should have 49 kids and it does
+bf <- data.frame(sample_data(chi_bf))
+```
+
+#### Alpha diversity analyses 
+```{r}
+################
+#ALPHA DIVERSITY
+################
+#Create dataframe with diversity indices for each specimen using PRUNED pseq object
+diversity <- estimate_richness(chi_bf, measures = c("Shannon", "Simpson", "Chao1", "Observed"))
+
+setDT(diversity, keep.rownames = TRUE)[]
+colnames(diversity) <- c("sample_id", "Observed", "Chao1", "se.chao1", "Shannon", "Simpson")
+rownames(diversity) <- diversity$sample_id
+diversity <- merge(diversity, bf, by="sample_id")
+
+class(diversity$hiv) #character; need to make factor to relevel
+diversity$hiv <- as.factor(diversity$hiv)
+diversity$hiv <- relevel(diversity$hiv, ref = "Unexposed")
+summary(div_bf <- lm(Shannon ~ hiv, data = diversity)) #no difference in univariable analysis
+summary(div_mv <- lm(Shannon ~ age + hiv + wood + season + abx + uri_rec2, data = diversity))
+
+#No association between hIV status and alpha diversity measures among exclusively breastfed children
+```
+
+#### Beta diversity
+
+- will run permanova and maaslin2
+
+```{r}
+###################
+#PERMANOVA and PCoA
+###################
+
+#Transform our pseq object
+chibf_clr <- transform(chi_bf, "clr")
+
+otu <- as.data.frame(otu_table(chibf_clr, taxa_are_rows=TRUE))
+otu_trans <- data.frame(t(otu))
+BC.dist=vegdist(otu_trans, method="euclidean")
+
+#hiv + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+adonis2(BC.dist ~ hiv + age, data = bf, permutations = 1000, by = "margin")
+#Significant difference by HIV status among exclusively breastfed children (P = 0.007, R2 = 0.074) but not age (P=0.33, R2 = 0.021)
+
+#what was the average age among exclusively breasfed children?
+summary(bf$age) #median (IQR) 35 (19, 52); not that different from overall cohort
+
+#PCoA plot#
+table(bf$hiv)
+bf$hiv2 <- NA
+bf$hiv2 [bf$hiv == "Infected"] <- "CLWH"
+bf$hiv2 [bf$hiv == "Exposed Uninfected"] <- "HEU children"
+bf$hiv2 [bf$hiv == "Unexposed"] <- "HUU children"
+table(bf$hiv2)
+class(bf$hiv2)
+bf$hiv2 <- as.factor(bf$hiv2)
+bf$hiv2 <- reorder(bf$hiv2, new.order=c("CLWH", "HEU children", "HUU children"))
+
+#Import back into pseq (source: https://jacobrprice.github.io/2017/08/26/phyloseq-to-vegan-and-back.html)
+sample_data(chibf_clr) <- as.data.frame(bf)
+#now see if it worked:
+bloop <- data.frame(sample_data(chibf_clr))
+table(bloop$hiv2)
+#success!
+remove(bloop)
+
+clr_pcoa <- ordinate(chibf_clr, method = "PCoA", distance = "euclidean")
+p_bf <- plot_ordination(chibf_clr, clr_pcoa, color = "hiv2") +
+  geom_point(size = 0.005) + theme_classic() + theme(
+    plot.title = element_text(size = 14, hjust = 0.5),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    legend.background = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)) +
+  scale_color_manual(values=c('#800000FF','#155F83FF', '#FFA319FF'))+
+  stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.5) +
+  xlab("PC1 (19.6%)") + ylab("PC2 (8.5%)") +
+  scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
+
+p_bf
+
+#########
+#MAASLIN2
+#########
+#Maaslin2 tutorial: https://github.com/biobakery/biobakery/wiki/maaslin2
+
+chibf.filter <- filter_taxa(chi_bf, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(chibf.filter) #36
+
+otu <- as.data.frame(otu_table(chibf.filter, taxa_are_rows=TRUE))
+
+#need to remove the unidentified species from here (n=4): row 8, 19, 35, 36
+  #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp.
+otu <- otu[-c(8, 19, 35, 36),]
+
+#Corynebacterium sp. KPL1995 -> Corynebacterium pseudodiphtheriticum
+#Corynebacterium sp. KPL1986 -> Corynebacterium accolens
+#Haemophilus sp. C1 -> Haemophilus haemolyticus
+
+row.names(otu)[3] <- "Haemophilus haemolyticus"
+row.names(otu)[7] <- "Corynebacterium pseudodiphtheriticum"
+row.names(otu)[8] <- "Corynebacterium accolens"
+
+fit_data2 = Maaslin2(
+  input_data = otu, 
+  input_metadata = bf, 
+  min_prevalence = 0.2,
+  max_significance = 0.2,
+  output = "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/maaslin_mv_filt50_bf", 
+  fixed_effects = c("hiv2", "season", "age", "abx", "wood", "uri_rec2"),
+  reference = c("hiv2,HUU children"))
+
+#CLWH have significantly less C. pseudodiphtheriticum!
+```
+
+#### Relative abundance plots
+
+```{r}
+chi.rel <- transform_sample_counts(chi_bf, function(Abundance) Abundance/sum(Abundance))
+sample_sums(chi.rel)  # This is a sanity check to make sure that relative abundance was calculated for each sample prior to pooling data
+#All samples add to 1
+melted_df <- psmelt(chi.rel)
+#clean up melted_df
+melted_df <- within(melted_df, rm(sib_weight, sib_sex, sib_height, sib_muac, sib_race, sib_bfeed_1,
+                                  sib_bfeed_2, sib_uri_recent, sib_uri_current, sib_pcr_1, sib_pcr_2,
+                                  sib_bcg, sib_hepb, sib_clinic, sib_clinic_dx___5, sib_clinic_dx_oth,
+                                  sib_hosp, sib_meds, sib_meds_name, sibmo, sibyr, sib_vl1_weeks, sib_vl_weeks2, sib_med_days, sib_dpt, sib_pcv, sib_rota, sib_polio, sib_measles, sib_age))
+melted_df <- within(melted_df, rm(samp_storage, enr_clinic, enr_clinic_other, mat_np))
+
+#RELATIVE ABUNDANCE PLOTS
+# Create dataframes with overall relative abundances of phyla and genera
+melted_df$Phylum <- as.character(melted_df$Phylum)
+phyla_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum), FUN=sum)
+phyla_abundances$x <- (phyla_abundances$x)/(nsamples(chi.rel))
+names(phyla_abundances)[names(phyla_abundances) == 'x'] <- 'phyla_Ab'
+sum(phyla_abundances$phyla_Ab)    # Should sum to 1 (sum of relative abundances of phyla)
+nrow(phyla_abundances)            # Corresponds to # of unique phyla: 116
+
+melted_df$Genus <- as.character(melted_df$Genus)
+genus_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,
+                                                           OTU=melted_df$OTU), FUN=mean)
+genus_abundances <- aggregate(genus_abundances$x, by=list(Phylum=genus_abundances$Phylum,
+                                                          Genus=genus_abundances$Genus), FUN=sum)
+names(genus_abundances)[names(genus_abundances) == 'x'] <- 'genus_Ab'
+sum(genus_abundances$genus_Ab)    # Should sum to 1 (sum of relative abundances of genera)
+nrow(genus_abundances)            # Corresponds to # of unique genera: 2146
+abundances <- merge(genus_abundances, phyla_abundances, by="Phylum")
+
+melted_df$Species <- as.character(melted_df$Species)
+species_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,Species=melted_df$Species,
+                                                             OTU=melted_df$OTU), FUN=mean)
+species_abundances <- aggregate(species_abundances$x, by=list(Phylum=species_abundances$Phylum,
+                                                              Genus=species_abundances$Genus, Species=species_abundances$Species), FUN=sum)
+names(species_abundances)[names(species_abundances) == 'x'] <- 'species_Ab'
+sum(species_abundances$species_Ab)    # Should sum to 1 (sum of relative abundances of genera)
+nrow(species_abundances)            # Corresponds to # of unique species: 6708 ***WHY is this different from 6709?###
+abundances <- merge(abundances, species_abundances, by=c("Phylum", "Genus"))
+#merging on Phylum AND Genus gets rid of the phylum.x and phylum.y problem we were having earlier
+
+phyla_abundances <- arrange(phyla_abundances, desc(phyla_Ab)) 
+# Create a df with the top 5 phyla
+TOPPhyla <- unique(phyla_abundances$Phylum[1:5])
+phylum_df <- phyla_abundances[phyla_abundances$Phylum %in% TOPPhyla,]
+phylum_df$Phylum <- factor(phylum_df$Phylum, levels = phylum_df$Phylum[order(-phylum_df$phyla_Ab)])
+
+genus_abundances <- arrange(genus_abundances, desc(genus_Ab))  
+TOPGenera <- unique(genus_abundances$Genus[1:10])
+genus_df <- genus_abundances[genus_abundances$Genus %in% TOPGenera,]
+genus_df$Genus <- factor(genus_df$Genus, levels = genus_df$Genus[order(-genus_df$genus_Ab)])
+
+#create df with top 10 species
+species_abundances <- arrange(species_abundances, desc(species_Ab))  
+TOPSpecies <- unique(species_abundances$Species[1:10])
+species_df <- species_abundances[species_abundances$Species %in% TOPSpecies,]
+species_df$Species <- factor(species_df$Species, levels = species_df$Species[order(-species_df$species_Ab)])
+
+# Rename species other than top10 as "Other" in creating dataframe relative_df
+relative_df <- merge(melted_df, abundances, by=c("Genus", "Species"))
+
+relative_df$Species[!(relative_df$Species %in% TOPSpecies)] <- "Other"
+sum(relative_df$Abundance) #sums to 49.00032 (and we have n=49 kids...?)
+table(relative_df$Species)
+
+#already generated our chisp2 color palette
+
+#CREATING RELATIVE ABUNDANCE PLOT
+relative_df$subject_abundances <- (relative_df$Abundance)/(length(unique(relative_df$Sample))) 
+#abbreviate HIV status
+relative_df$hiv2 <- NA
+relative_df$hiv2 [relative_df$hiv == "Infected"] <- "CLWH"
+relative_df$hiv2 [relative_df$hiv == "Exposed Uninfected"] <- "HEU children"
+relative_df$hiv2 [relative_df$hiv == "Unexposed"] <- "HUU children"
+table(relative_df$hiv2)
+#matches up with table(relative_df$hiv)
+relative_df$hiv2 <- as.factor(relative_df$hiv2)
+relative_df$hiv2 <- reorder(relative_df$hiv2, new.order=c("CLWH", "HEU children", "HUU children"))
+
+relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus haemolyticus", "Haemophilus influenzae", "Micrococcus luteus", "Moraxella catarrhalis", "Moraxella lacunata", "Moraxella nonliquefaciens", "Streptococcus pneumoniae", "Other"))
+
+spec_bf <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) +   geom_bar(stat="identity", position="fill") + theme_classic() + theme(
+  legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) +  
+  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus haemolyticus*", "*Haemophilus influenzae*", "*Micrococcus luteus*", "*Moraxella catarrhalis*", "*Moraxella lacunata*", "*Moraxella nonliquefaciens*", "*Streptococcus pneumoniae*", "Other")) +
+  ylab("Mean relative abundance") 
+
+bf_plot <- plot(spec_bf)
+
+#Create supplemental sensitivity analysis figure
+fig_bf <- plot_grid(p_bf, bf_plot, labels = c('A', 'B'), align = "h", axis = "b", label_size = 12, rel_widths = c(1, 1.5))
+fig_bf
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig_bf.pdf", plot = fig_bf, dpi = 300, width = 11, height = 4)
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig S_bf.png",
+    width = 11, height = 4, units = 'in', res = 600)
+fig_bf
+dev.off()
+
+```
+
