@@ -1046,9 +1046,9 @@ clust <- ggplot(data = p, aes(x = A1, y = A2)) +
   theme_classic() +
     theme(
     legend.text = element_text(size = 10),
-    legend.title = element_text(size = 12),
-    axis.text = element_text(size = 10),
-    axis.title = element_text(size = 12))+
+    legend.title = element_text(size = 10),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 10))+
   stat_ellipse(aes(color = data.cluster)) +
   stat_stars(aes(color = data.cluster), show.legend = T) +
   xlab("PC1 (22.6%)") +
@@ -1456,6 +1456,8 @@ dev.off()
 
 ```
 
+#### Cluster composition
+
 ```{r}
 #Cluster composition
 sample_data(chi.spec)$cluster = as.factor(data.cluster)
@@ -1580,8 +1582,9 @@ clust_plot <- ggplot(f[order(f$Species, decreasing = TRUE),], aes(x=variable, y=
   geom_bar(stat="identity", position="fill") + theme_classic() + 
   theme(legend.position="right", 
   legend.text=element_markdown(),
-  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
-  axis.title.x = element_text(size=12), axis.text.x = element_text(size=10, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  legend.title = element_text(size=10),
+  axis.title.y = element_text(size=10, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_text(size=10), axis.text.x = element_text(size=10, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
   xlab("Microbiome profile") + ylab("Mean relative abundance") 
 
 clust_plot
@@ -1597,6 +1600,9 @@ fig5 <- plot_grid(clust, clust_plot, labels = c('A', 'B'), align = "h", axis = "
 fig5
 
 ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig3NEW(clust).pdf", plot = fig5, dpi = 300, width = 11, height = 3.5)
+
+#UPDATED 9-22-23 with smaller axes and legend fonts per MK:
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig3NEW(clust)_V2.pdf", plot = fig5, dpi = 300, width = 11, height = 3.5)
 
 # #save as .eps file to comply with Lancet Microbe requirements
 # ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig5_clust.eps", width = 11, height = 3.5, units = "in")
@@ -2433,9 +2439,6 @@ SparccP_plot2c <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom
   axis.text.y = element_markdown(face = "italic"),
   axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
 
-# scale_x_discrete(limits=rev) + scale_y_discrete(position = "right")
-
-SparccP_plot2c
 
 png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparccP2c.png",
     width = 12, height = 9, units = 'in', res = 600)
@@ -2454,6 +2457,17 @@ SparccP_plot2d <- SparccPcsv %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + g
   axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
 
 ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4SparCC_V2.pdf", plot = SparccP_plot2d, dpi = 300, width = 10, height = 7)
+
+#UPDATE 9-22-23 FROM MK: make legend symmetrical and reduce size of "correlation"; could also use rho symbol but will keep text for clarity
+SparccP_plot2e <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() + scale_fill_gradientn(
+  colors = c("#800000FF", "white", "#4D004B"), limits = c(-1, 1)) + scale_x_discrete(position = "bottom", limits=rev) + theme(
+  axis.text.x = element_markdown(angle = 45, hjust = 1, face = "italic"),
+  axis.text.y = element_markdown(face = "italic"),
+  legend.title = element_text(size = 9),
+  legend.text.align = 1,
+  axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4SparCC_V3.pdf", plot = SparccP_plot2e, dpi = 300, width = 10, height = 7)
 
 ```
 
@@ -3309,6 +3323,38 @@ remove(BC.dist, lines)
 #RELATIVE ABUNDANCE PLOTS: CD4
 ##############################
 #Because we see a compositional difference by binary CD4, we will generate relative abundance plots for this pseq and for viral load
+
+###UPDATE 9-22-23; MK recommends using the overall top 10 species for all relative abundance plots in our manuscript. So don't need to re-generate a new relative_df dataframe; we need to merge our cd4 classification with our relative_df
+
+#df with only CLWH
+test <- subset(relative_df, relative_df$hiv == "Infected")
+table(test$Species)
+sum(test$Abundance) #sums to 44.00003 and we have 44 CLWH 
+
+#Now will attempt to merge with chi_cd4
+test2 <- chi_cd4[c("study_id", "cd4cat")]
+rel_cd4 <- merge(test, test2, by=c("study_id"))
+sum(rel_cd4$Abundance)   # sums to 42.00003 (and we have n=42 kids...?)
+table(rel_cd4$Species)
+
+#the subsequent plots look wrong and I can't figure out where the error is; so will make a plot with just 'test' to start
+test$subject_abundances <- (test$Abundance)/(length(unique(test$Sample))) 
+test$Species <- factor(test$Species)
+test$Species <- reorder(test$Species, new.order=c("Corynebacterium accolens","Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Moraxella catarrhalis", "Moraxella lincolnii",  "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
+
+ggplot(test[order(test$Species, decreasing = TRUE),], aes(x=1, y=subject_abundances, fill=Species)) + geom_bar(stat="identity", position="fill") + theme_classic() + theme(legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  ylab("Mean relative abundance") 
+
+#this lines up with our CLWH column in figure 1, so the problem has to be with merging the relative abundance data with our cd4 data
+#create a dataframe with ONLY study.id, Species, and subject_abundances and merge this with test2
+test3 <- test[c("study_id", "Species", "subject_abundances")]
+rel_cd4 <- merge(test2, test3, by=c("study_id"))
+#this also doesn't work
+#instead of merging, re-run your CD4 code to create the variables and see if that works 
+
+#############
+#DELETE BELOW
+#############
 chi.rel <- transform_sample_counts(cd4, function(Abundance) Abundance/sum(Abundance))
 sample_sums(chi.rel)  # This is a sanity check to make sure that relative abundance was calculated for each sample prior to pooling data
 #All samples add to 1
@@ -3376,6 +3422,10 @@ relative_df$Species[!(relative_df$Species %in% TOPSpecies)] <- "Other"
 sum(relative_df$Abundance) #sums to 42.00003 (and we have n=42 kids...?)
 table(relative_df$Species)
 
+#############
+#DELETE ABOVE
+#############
+
 #To generate color palette of 11 colors used previously: 
 library(RColorBrewer)
 library(scales)
@@ -3383,32 +3433,33 @@ chisp2 <- c("#293352", "#800000FF", "#767676FF", "#FFA319FF", "#8A9045FF", "#155
 show_col(chisp2)
 
 #CREATING RELATIVE ABUNDANCE PLOT
-relative_df$subject_abundances <- (relative_df$Abundance)/(length(unique(relative_df$Sample))) 
-#Clarify CD4 cutoff 
-relative_df$cd4cat <- NA
-relative_df$cd4cat [relative_df$cd4nL==1] <- "Normal CD4"
-relative_df$cd4cat [relative_df$cd4nL==0] <- "Low CD4"
-table(relative_df$cd4cat)
-class(relative_df$cd4cat)
-relative_df$cd4cat <- as.factor(chi_cd4$cd4cat)
-relative_df$cd4cat <- reorder(chi_cd4$cd4cat, new.order=c("Low CD4", "Normal CD4"))
+rel_cd4$subject_abundances <- (rel_cd4$Abundance)/(length(unique(rel_cd4$Sample))) 
+# #Clarify CD4 cutoff 
+# rel_cd4$cd4cat <- NA
+# rel_cd4$cd4cat [rel_cd4$cd4nL==1] <- "Normal CD4"
+# rel_cd4$cd4cat [rel_cd4$cd4nL==0] <- "Low CD4"
+# table(rel_cd4$cd4cat)
+class(rel_cd4$cd4cat)
+# rel_cd4$cd4cat <- as.factor(rel_cd4$cd4cat)
+rel_cd4$cd4cat <- reorder(rel_cd4$cd4cat, new.order=c("Low CD4", "Normal CD4"))
 
-relative_df$Species <- factor(relative_df$Species)
-relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Micrococcus luteus", "Moraxella catarrhalis", "Moraxella lincolnii",  "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
+rel_cd4$Species <- factor(rel_cd4$Species)
+rel_cd4$Species <- reorder(rel_cd4$Species, new.order=c("Corynebacterium accolens","Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Moraxella catarrhalis", "Moraxella lincolnii",  "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
 
-subject_plot_cd4 <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=cd4cat, y=subject_abundances, fill=Species)) + geom_bar(stat="identity", position="fill") + theme_classic() + theme(legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Micrococcus luteus*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+subject_plot_cd4_2 <- ggplot(rel_cd4[order(rel_cd4$Species, decreasing = TRUE),], aes(x=cd4cat, y=subject_abundances, fill=Species)) + geom_bar(stat="identity", position="fill") + theme_classic() + theme(legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
   ylab("Mean relative abundance") 
 
-p4 <- plot(subject_plot_cd4)
+p4 <- plot(subject_plot_cd4_2)
+
 
 #NOW: combine all using patchwork vs cowplot (great ref: https://wilkelab.org/cowplot/articles/aligning_plots.html)
 #For future reference: p1 and p2 code is in Fog Kaiju 5-26-22.R file, p3 and p4 are here
 #After MK feedback, removed x axis titles for B and D, only capitalized "Mean" in y axis titles for B&D, and increased width of A&C (so ratio from 1, 1.65 to 1, 1.55)
-fig2 <- plot_grid(p1, p2, p3, p4, labels = "AUTO", nrow = 2, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1.5))
+fig2 <- plot_grid(p1, p2, p3, p4, labels = "AUTO", nrow = 2, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1.3))
 
 fig2
 
-ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2NEW.pdf", plot = fig2, dpi = 300, height = 9, width = 11)
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig1NEW_V2.pdf", plot = fig2, dpi = 300, height = 9, width = 11)
 
 ```
 
