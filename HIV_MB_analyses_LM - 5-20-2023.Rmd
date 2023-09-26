@@ -3350,7 +3350,54 @@ ggplot(test[order(test$Species, decreasing = TRUE),], aes(x=1, y=subject_abundan
 test3 <- test[c("study_id", "Species", "subject_abundances")]
 rel_cd4 <- merge(test2, test3, by=c("study_id"))
 #this also doesn't work
-#instead of merging, re-run your CD4 code to create the variables and see if that works 
+
+#instead of merging, re-run your CD4 code to create the variables in your test dataframe and see if that works 
+test$newest_cd4 <- NA
+test$newest_cd4 [test$chi_cd4_weeks1 < test$chi_cd4_weeks2] <- 1
+test$newest_cd4 [test$chi_cd4_weeks2 < test$chi_cd4_weeks1] <- 2
+test$newest_cd4 [test$chi_cd4_weeks2 < 0] <- 1  #we want to include the cd4 collected BEFORE enrollment where possible
+test$newest_cd4 [is.na(test$chi_cd4_perc_2)] <- 1    #if we are missing cd4_2, we will use cd4_1
+test$newest_cd4 [is.na(test$chi_cd4_perc_1)] <- 2    #one child is missing cd4_1 but has cd4_2
+test$newest_cd4 [is.na(test$chi_cd4_perc_1) & is.na(test$chi_cd4_perc_2)] <- NA
+table(test$newest_cd4)
+
+#create new dataframe without B-45 and B-52 (aka new df with children missing CD4 data removed)
+test2 <- subset(test, !is.na(newest_cd4))
+test2$Var1 <- test2$chi_cd4_perc_1
+test2$Var2 <- test2$chi_cd4_perc_2
+
+test2 <- test2 %>% rowwise() %>%
+  mutate(newest_cd4perc = get(paste0('Var', newest_cd4)))
+
+summary(test2$newest_cd4perc)
+table(test2$newest_cd4perc)
+
+#make new variable for immune competent CD4 or not, with CD4 percentage >=25% = immune competent
+  #d/w MK re: potentially adding a cutoff at 15% for immunosuppression, but we only have 2 kids with CD4% < 15 so will stay with 25% binary for now
+test2$cd4nL <- NA
+test2$cd4nL [test2$newest_cd4perc >=25] <- "1"
+test2$cd4nL [test2$newest_cd4perc < 25] <- "0"
+table(test2$cd4nL)  #11 kids with CD4% < 25
+
+#CREATING RELATIVE ABUNDANCE PLOT
+#Clarify CD4 cutoff
+test2$cd4cat <- NA
+test2$cd4cat [test2$cd4nL==1] <- "Normal CD4"
+test2$cd4cat [test2$cd4nL==0] <- "Low CD4"
+table(test2$cd4cat)
+class(test2$cd4cat)
+test2$cd4cat <- as.factor(test2$cd4cat)
+test2$cd4cat <- reorder(test2$cd4cat, new.order=c("Low CD4", "Normal CD4"))
+
+# test2$Species <- factor(test2$Species)
+# test2$Species <- reorder(test2$Species, new.order=c("Corynebacterium accolens","Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Moraxella catarrhalis", "Moraxella lincolnii",  "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
+
+subject_plot_cd4_2 <- ggplot(test2[order(test2$Species, decreasing = TRUE),], aes(x=cd4cat, y=subject_abundances, fill=Species)) + geom_bar(stat="identity", position="fill") + theme_classic() + theme(legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  ylab("Mean relative abundance") 
+
+p4 <- plot(subject_plot_cd4_2)
+
+
 
 #############
 #DELETE BELOW
