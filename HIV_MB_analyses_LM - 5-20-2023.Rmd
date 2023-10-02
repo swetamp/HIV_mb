@@ -2525,6 +2525,11 @@ species_df$Species <- factor(species_df$Species, levels = species_df$Species[ord
 # Rename species other than top10 as "Other" in creating dataframe relative_df
 # Rename genera other than top10 as "Other" in creating dataframe relative_df 
 relative_df <- merge(melted_df, abundances, by=c("Genus", "Species"))
+
+####9-26
+#can recode Species variable in melted_df to match with the TOPSpecies list, so any value not in that list is recoded as other as in line 2541###
+### don't need relative_df
+
 #keep getting vector memory exhausted error; need to reboot R so will save melted_df and abundances as csv files
   #source for fix: https://stackoverflow.com/questions/51295402/r-on-macos-error-vector-memory-exhausted-limit-reached
 # write.csv(melted_df, 'melted_df.csv')
@@ -3325,6 +3330,7 @@ remove(BC.dist, lines)
 #Because we see a compositional difference by binary CD4, we will generate relative abundance plots for this pseq and for viral load
 
 ###UPDATE 9-22-23; MK recommends using the overall top 10 species for all relative abundance plots in our manuscript. So don't need to re-generate a new relative_df dataframe; we need to merge our cd4 classification with our relative_df
+#Create relative abundances table and screenshot without manual labels so you have 2 ways to make sure your labeled figure is correct
 
 #df with only CLWH
 test <- subset(relative_df, relative_df$hiv == "Infected")
@@ -3343,6 +3349,10 @@ test$Species <- factor(test$Species)
 test$Species <- reorder(test$Species, new.order=c("Corynebacterium accolens","Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Moraxella catarrhalis", "Moraxella lincolnii",  "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
 
 ggplot(test[order(test$Species, decreasing = TRUE),], aes(x=1, y=subject_abundances, fill=Species)) + geom_bar(stat="identity", position="fill") + theme_classic() + theme(legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  ylab("Mean relative abundance") 
+
+#what happens if we take out decreasing = true and the labels?
+ggplot(test[order(test$Species),], aes(x=1, y=subject_abundances, fill=Species)) + geom_bar(stat="identity", position="fill") + theme_classic() + theme(legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2) +
   ylab("Mean relative abundance") 
 
 #this lines up with our CLWH column in figure 1, so the problem has to be with merging the relative abundance data with our cd4 data
@@ -3392,8 +3402,10 @@ test2$cd4cat <- reorder(test2$cd4cat, new.order=c("Low CD4", "Normal CD4"))
 # test2$Species <- factor(test2$Species)
 # test2$Species <- reorder(test2$Species, new.order=c("Corynebacterium accolens","Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Moraxella catarrhalis", "Moraxella lincolnii",  "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
 
-subject_plot_cd4_2 <- ggplot(test2[order(test2$Species, decreasing = TRUE),], aes(x=cd4cat, y=subject_abundances, fill=Species)) + geom_bar(stat="identity", position="fill") + theme_classic() + theme(legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
-  ylab("Mean relative abundance") 
+subject_plot_cd4_2 <- ggplot(test2[order(test2$Species, decreasing = TRUE),], aes(x=cd4cat, y=subject_abundances, fill=Species)) + geom_bar(stat="identity", position="fill") + theme_classic() + theme(legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2) 
+
+# labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  # ylab("Mean relative abundance"
 
 p4 <- plot(subject_plot_cd4_2)
 
