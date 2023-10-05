@@ -799,6 +799,44 @@ summary(perm, alternative="two.sided")
 We also received a reviewer comment requesting unsupervised clustering to clarify if there are some hidden groups among the data, so we will add this analysis. We tried Dirichlet Multinomial Models as suggested by the reviewer, but this was unsuccessful and we ultimately successfully used k-medioid clustering as done by McCumber et al in CID paper, using the code shared on his github: https://github.com/alexmccumber/BRAVE_Kids
 
 #### MaAsLin2 models
+```{r}
+chi.filter <- filter_taxa(chi_prune, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(chi.filter) #43
+
+otu <- as.data.frame(otu_table(chi.filter, taxa_are_rows=TRUE))
+#need to remove the unidentified species from here: row 11, 25, 37, 38, 40
+  #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp., Nocardioides sp. Root122
+otu <- otu[-c(11, 25, 37, 38, 40),]
+
+#Corynebacterium sp. KPL1995 -> Corynebacterium pseudodiphtheriticum
+#Corynebacterium sp. KPL1986 -> Corynebacterium accolens
+#Haemophilus sp. C1 -> Haemophilus haemolyticus
+
+row.names(otu)[3] <- "Haemophilus haemolyticus"
+row.names(otu)[10] <- "Corynebacterium pseudodiphtheriticum"
+row.names(otu)[11] <- "Corynebacterium accolens"
+
+#original MaAsLin2 with HUU as reference
+fit_data2 = Maaslin2(
+  input_data = otu, 
+  input_metadata = child, 
+  min_prevalence = 0.2,
+  max_significance = 0.2,
+  output = "maaslin_mv_kaiju_filt50_v4", 
+  fixed_effects = c("hiv", "season", "age", "abx", "wood", "uri_rec2"),
+  reference = c("hiv,Unexposed"))
+
+#Maaslin only allows for pairwise comparisons, so we can only compare HUU to CLWH and HUU to HEU. What if we set HEU as the reference to see if anything is differentially abundant between HEU and CLWH?
+fit_data2 = Maaslin2(
+  input_data = otu, 
+  input_metadata = child, 
+  min_prevalence = 0.2,
+  max_significance = 0.2,
+  output = "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/maaslin_mv_kaiju_filt50_v5_HEUref", 
+  fixed_effects = c("hiv", "season", "age", "abx", "wood", "uri_rec2"),
+  reference = c("hiv,Exposed Uninfected"))
+```
 
 #### MaAsLin2 barplot (previously figure 3, now figure 2 in manuscript)
 ```{r}
@@ -3148,6 +3186,7 @@ head(chi_cd4)
 cd4 <- merge_phyloseq(cd4, chi_cd4)
 #now see if it worked:
 bloop <- data.frame(sample_data(cd4))
+table(bloop$cd4nL)
 #success!
 remove(bloop)
 #missing: B-45 and B-52
@@ -3601,99 +3640,7 @@ adonis2(BC.dist ~ age + hiv, data = hu, permutations = 1000)
 #clean up
 remove(hucd4_clr, test, otu, otu_trans, clr_eiuu, clr_pcoa, bloop, BC.dist, lines)
 
-#RELATIVE ABUNDANCE PLOTS
-chi.rel <- transform_sample_counts(hucd4, function(Abundance) Abundance/sum(Abundance))
-sample_sums(chi.rel)  # This is a sanity check to make sure that relative abundance was calculated for each sample prior to pooling data
-#All samples add to 1
-melted_df <- psmelt(chi.rel)
-#clean up melted_df
-melted_df <- within(melted_df, rm(sib_weight, sib_sex, sib_height, sib_muac, sib_race, sib_bfeed_1,
-                                  sib_bfeed_2, sib_uri_recent, sib_uri_current, sib_pcr_1, sib_pcr_2,
-                                  sib_bcg, sib_hepb, sib_clinic, sib_clinic_dx___5, sib_clinic_dx_oth,
-                                  sib_hosp, sib_meds, sib_meds_name, sibmo, sibyr, sib_vl1_weeks, sib_vl_weeks2,
-                                  sib_med_days, sib_dpt, sib_pcv, sib_rota, sib_polio, sib_measles, sib_age))
-melted_df <- within(melted_df, rm(samp_storage, enr_clinic, enr_clinic_other, mat_np))
-
-# Create dataframes with overall relative abundances of phyla and genera
-melted_df$Phylum <- as.character(melted_df$Phylum)
-phyla_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum), FUN=sum)
-phyla_abundances$x <- (phyla_abundances$x)/(nsamples(chi.rel))
-names(phyla_abundances)[names(phyla_abundances) == 'x'] <- 'phyla_Ab'
-sum(phyla_abundances$phyla_Ab)    # Should sum to 1 (sum of relative abundances of phyla)
-nrow(phyla_abundances)            # Corresponds to # of unique phyla: 116
-
-melted_df$Genus <- as.character(melted_df$Genus)
-genus_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,
-                                                           OTU=melted_df$OTU), FUN=mean)
-genus_abundances <- aggregate(genus_abundances$x, by=list(Phylum=genus_abundances$Phylum,
-                                                          Genus=genus_abundances$Genus), FUN=sum)
-names(genus_abundances)[names(genus_abundances) == 'x'] <- 'genus_Ab'
-sum(genus_abundances$genus_Ab)    # Should sum to 1 (sum of relative abundances of genera)
-nrow(genus_abundances)            # Corresponds to # of unique genera: 2146
-abundances <- merge(genus_abundances, phyla_abundances, by="Phylum")
-
-melted_df$Species <- as.character(melted_df$Species)
-species_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,Species=melted_df$Species,
-                                                             OTU=melted_df$OTU), FUN=mean)
-species_abundances <- aggregate(species_abundances$x, by=list(Phylum=species_abundances$Phylum,
-                                                              Genus=species_abundances$Genus, Species=species_abundances$Species), FUN=sum)
-names(species_abundances)[names(species_abundances) == 'x'] <- 'species_Ab'
-sum(species_abundances$species_Ab)    # Should sum to 1 (sum of relative abundances of genera)
-nrow(species_abundances)            # Corresponds to # of unique species: 6708 ***WHY is this different from 6709?###
-abundances <- merge(abundances, species_abundances, by=c("Phylum", "Genus"))
-#merging on Phylum AND Genus gets rid of the phylum.x and phylum.y problem we were having earlier
-
-phyla_abundances <- arrange(phyla_abundances, desc(phyla_Ab)) 
-# Create a df with the top 5 phyla
-TOPPhyla <- unique(phyla_abundances$Phylum[1:5])
-phylum_df <- phyla_abundances[phyla_abundances$Phylum %in% TOPPhyla,]
-phylum_df$Phylum <- factor(phylum_df$Phylum, levels = phylum_df$Phylum[order(-phylum_df$phyla_Ab)])
-
-genus_abundances <- arrange(genus_abundances, desc(genus_Ab))  
-TOPGenera <- unique(genus_abundances$Genus[1:10])
-genus_df <- genus_abundances[genus_abundances$Genus %in% TOPGenera,]
-genus_df$Genus <- factor(genus_df$Genus, levels = genus_df$Genus[order(-genus_df$genus_Ab)])
-
-#create df with top 10 species
-species_abundances <- arrange(species_abundances, desc(species_Ab))  
-TOPSpecies <- unique(species_abundances$Species[1:10])
-species_df <- species_abundances[species_abundances$Species %in% TOPSpecies,]
-species_df$Species <- factor(species_df$Species, levels = species_df$Species[order(-species_df$species_Ab)])
-
-# Rename species other than top10 as "Other" in creating dataframe relative_df
-relative_df <- merge(melted_df, abundances, by=c("Genus", "Species"))
-#keep getting vector memory exhausted error; need to reboot R so will save melted_df and abundances as csv files
-#source for fix: https://stackoverflow.com/questions/51295402/r-on-macos-error-vector-memory-exhausted-limit-reached
-
-relative_df$Species[!(relative_df$Species %in% TOPSpecies)] <- "Other"
-sum(relative_df$Abundance) #sums to 130.0008 (and we have n=130 kids...?)
-table(relative_df$Species)
-
-#To generate color palette of 11 colors used previously: 
-library(RColorBrewer)
-library(scales)
-chisp2 <- c("#293352", "#800000FF", "#767676FF", "#FFA319FF", "#8A9045FF", "#155F83FF", "#C16622FF", "#4D004B", "#8F3931FF", "#58593FFF", "#350E20FF")
-show_col(chisp2)
-
-#CREATING RELATIVE ABUNDANCE PLOT
-relative_df$subject_abundances <- (relative_df$Abundance)/(length(unique(relative_df$Sample))) 
-#abbreviate HIV status
-relative_df$hiv2 <- NA
-relative_df$hiv2 [relative_df$hiv == "Infected"] <- "Immunocompetent CLWH"
-relative_df$hiv2 [relative_df$hiv == "Exposed Uninfected"] <- "HEU children"
-relative_df$hiv2 [relative_df$hiv == "Unexposed"] <- "HUU children"
-table(relative_df$hiv2)
-#matches up with table(relative_df$hiv)
-relative_df$hiv2 <- as.factor(relative_df$hiv2)
-relative_df$hiv2 <- reorder(relative_df$hiv2, new.order=c("Immunocompetent CLWH", "HEU children", "HUU children"))
-relative_df$Species <- factor(relative_df$Species)
-relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Micrococcus luteus", "Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
-spec_eiuu <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) +   geom_bar(stat="identity", position="fill") + theme_classic() + theme(
-  legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) +  
-  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Micrococcus luteus*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
-  ylab("Mean relative abundance") 
-
-plot(spec_eiuu)
+#FOR RELATIVE ABUNDANCE PLOTS - SEE 9-28-23 FILE (WILL MERGE)
 
 #MAASLIN 2: CLWH (immunocompetent only), HEU, HUU
 hu.filter <- filter_taxa(hucd4, function(Abundance) mean(Abundance)>=50, TRUE)
@@ -3781,6 +3728,7 @@ hlow$hiv2 <- reorder(hlow$hiv2, new.order=c("Immunocompromised CLWH", "HEU child
 sample_data(hlowcd4_clr) <- as.data.frame(hlow)
 #now see if it worked:
 bloop <- data.frame(sample_data(hlowcd4_clr))
+table(bloop$hiv2)
 #success!
 remove(bloop)
 
@@ -3806,106 +3754,15 @@ clr_hlow
 #clean up
 # remove(clr_pcoa, hlowcd4_clr, otu, otu_trans, BC.dist, lines)
 
-#CREATE MELTED_DF FOR RELATIVE ABUNDANCE PLOTS
-chi.rel <- transform_sample_counts(hlowcd4, function(Abundance) Abundance/sum(Abundance))
-sample_sums(chi.rel)  # This is a sanity check to make sure that relative abundance was calculated for each sample prior to pooling data
-#All samples add to 1
-melted_df <- psmelt(chi.rel)
-#clean up melted_df
-melted_df <- within(melted_df, rm(sib_weight, sib_sex, sib_height, sib_muac, sib_race, sib_bfeed_1,
-                                  sib_bfeed_2, sib_uri_recent, sib_uri_current, sib_pcr_1, sib_pcr_2,
-                                  sib_bcg, sib_hepb, sib_clinic, sib_clinic_dx___5, sib_clinic_dx_oth,
-                                  sib_hosp, sib_meds, sib_meds_name, sibmo, sibyr, sib_vl1_weeks, sib_vl_weeks2, sib_med_days, sib_dpt, sib_pcv, sib_rota, sib_polio, sib_measles, sib_age))
-melted_df <- within(melted_df, rm(samp_storage, enr_clinic, enr_clinic_other, mat_np))
-
-#RELATIVE ABUNDANCE PLOTS
-# Create dataframes with overall relative abundances of phyla and genera
-melted_df$Phylum <- as.character(melted_df$Phylum)
-phyla_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum), FUN=sum)
-phyla_abundances$x <- (phyla_abundances$x)/(nsamples(chi.rel))
-names(phyla_abundances)[names(phyla_abundances) == 'x'] <- 'phyla_Ab'
-sum(phyla_abundances$phyla_Ab)    # Should sum to 1 (sum of relative abundances of phyla)
-nrow(phyla_abundances)            # Corresponds to # of unique phyla: 116
-
-melted_df$Genus <- as.character(melted_df$Genus)
-genus_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,
-                                                           OTU=melted_df$OTU), FUN=mean)
-genus_abundances <- aggregate(genus_abundances$x, by=list(Phylum=genus_abundances$Phylum,
-                                                          Genus=genus_abundances$Genus), FUN=sum)
-names(genus_abundances)[names(genus_abundances) == 'x'] <- 'genus_Ab'
-sum(genus_abundances$genus_Ab)    # Should sum to 1 (sum of relative abundances of genera)
-nrow(genus_abundances)            # Corresponds to # of unique genera: 2146
-abundances <- merge(genus_abundances, phyla_abundances, by="Phylum")
-
-melted_df$Species <- as.character(melted_df$Species)
-species_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,Species=melted_df$Species,
-                                                             OTU=melted_df$OTU), FUN=mean)
-species_abundances <- aggregate(species_abundances$x, by=list(Phylum=species_abundances$Phylum,
-                                                              Genus=species_abundances$Genus, Species=species_abundances$Species), FUN=sum)
-names(species_abundances)[names(species_abundances) == 'x'] <- 'species_Ab'
-sum(species_abundances$species_Ab)    # Should sum to 1 (sum of relative abundances of genera)
-nrow(species_abundances)            # Corresponds to # of unique species: 6708 ***WHY is this different from 6709?###
-abundances <- merge(abundances, species_abundances, by=c("Phylum", "Genus"))
-#merging on Phylum AND Genus gets rid of the phylum.x and phylum.y problem we were having earlier
-
-phyla_abundances <- arrange(phyla_abundances, desc(phyla_Ab)) 
-# Create a df with the top 5 phyla
-TOPPhyla <- unique(phyla_abundances$Phylum[1:5])
-phylum_df <- phyla_abundances[phyla_abundances$Phylum %in% TOPPhyla,]
-phylum_df$Phylum <- factor(phylum_df$Phylum, levels = phylum_df$Phylum[order(-phylum_df$phyla_Ab)])
-
-genus_abundances <- arrange(genus_abundances, desc(genus_Ab))  
-TOPGenera <- unique(genus_abundances$Genus[1:10])
-genus_df <- genus_abundances[genus_abundances$Genus %in% TOPGenera,]
-genus_df$Genus <- factor(genus_df$Genus, levels = genus_df$Genus[order(-genus_df$genus_Ab)])
-
-#create df with top 10 species
-species_abundances <- arrange(species_abundances, desc(species_Ab))  
-TOPSpecies <- unique(species_abundances$Species[1:10])
-species_df <- species_abundances[species_abundances$Species %in% TOPSpecies,]
-species_df$Species <- factor(species_df$Species, levels = species_df$Species[order(-species_df$species_Ab)])
-
-# Rename species other than top10 as "Other" in creating dataframe relative_df
-relative_df <- merge(melted_df, abundances, by=c("Genus", "Species"))
-#keep getting vector memory exhausted error; need to reboot R so will save melted_df and abundances as csv files
-#source for fix: https://stackoverflow.com/questions/51295402/r-on-macos-error-vector-memory-exhausted-limit-reached
-
-relative_df$Species[!(relative_df$Species %in% TOPSpecies)] <- "Other"
-sum(relative_df$Abundance) #sums to 110.0008 (and we have n=110 kids...?)
-table(relative_df$Species)
-
-#already generated our chisp2 color palette
-
-#CREATING RELATIVE ABUNDANCE PLOT
-relative_df$subject_abundances <- (relative_df$Abundance)/(length(unique(relative_df$Sample))) 
-#abbreviate HIV status
-relative_df$hiv2 <- NA
-relative_df$hiv2 [relative_df$hiv == "Infected"] <- "Immunocompromised CLWH"
-relative_df$hiv2 [relative_df$hiv == "Exposed Uninfected"] <- "HEU children"
-relative_df$hiv2 [relative_df$hiv == "Unexposed"] <- "HUU children"
-table(relative_df$hiv2)
-#matches up with table(relative_df$hiv)
-relative_df$hiv2 <- as.factor(relative_df$hiv2)
-relative_df$hiv2 <- reorder(relative_df$hiv2, new.order=c("Immunocompromised CLWH", "HEU children", "HUU children"))
-
-relative_df$Species <- factor(relative_df$Species)
-relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium accolens", "Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae",  "Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
-
-spec_hlow <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) + 
-  geom_bar(stat="identity", position="fill") + theme_classic() + theme(
-  legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) +  
-  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*","*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
-  ylab("Mean relative abundance") 
-
-hlow_plot <- plot(spec_hlow)
+#CREATE MELTED_DF FOR RELATIVE ABUNDANCE PLOTS --> SEE 9-28-23 FILE
 
 #NOW: make a 4 part figure combining our PCoA plots and relative abundance plots for our subanalyses of HEU and HUU children vs 1) CLWH and low CD4 and 2) CLWH and normal CD4
 
-fig_HEU_HUU_CD4hilow <- plot_grid(clr_hlow, hlow_plot, clr_eiuu, spec_eiuu,labels = "AUTO", nrow = 2, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1.3))
+fig_HEU_HUU_CD4hilow <- plot_grid(clr_hlow, spec_hlow, clr_eiuu, spec_hu,labels = "AUTO", nrow = 2, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1.3))
 
-ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig S_CD4hilow_HEU_HUU.pdf", plot = fig_HEU_HUU_CD4hilow, dpi = 300, width = 11, height = 9)
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig S_CD4hilow_HEU_HUU_V2.pdf", plot = fig_HEU_HUU_CD4hilow, dpi = 300, width = 11, height = 9)
 
-png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig S_CD4hilow_HEU_HUU.png",
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig S_CD4hilow_HEU_HUU_V2.png",
     width = 11, height = 9, units = 'in', res = 600)
 fig_HEU_HUU_CD4hilow
 dev.off()
@@ -4256,7 +4113,7 @@ adonis2(BC.dist ~ subject + season + uri_rec2 + age + bfeed_any, data = sib3, pe
 
 ### Sensitivity analysis: breastfeeding
 
-- We see a strong association between HIV status and any history of breastfeeding in our cohort. Given the established association between breastfeeding and NP microbiome composition, what do our results look like if we compare NP microbiome characteristics among children who were exclusively breastfed?
+- We see a strong association between HIV status and any history of breastfeeding in our cohort. Given the established association between breastfeeding and NP microbiome composition, what do our results look like if we compare NP microbiome characteristics among children who were breastfed? Initially we analyzed only children with exclusive bf, but after d/w MK will conduct analysis with children who received any breastmilk (n=84)
 
 ```{r}
 #Compare numbers of any breastfeeding to exclusive breastfeeding 
@@ -4278,8 +4135,8 @@ fisher.test(child$bfeed_1, child$hiv)
 
 summary(child$bfeed_2)
 
-#Create pseq object of only exclusively breastfed children
-chi_bf = subset_samples(chi_prune, bfeed_1 == 1) #should have 49 kids and it does
+#Create pseq object of breastfed children
+chi_bf = subset_samples(chi_prune, bfeed_1 != 2) #should have 84 kids and it does
 bf <- data.frame(sample_data(chi_bf))
 ```
 
@@ -4302,7 +4159,7 @@ diversity$hiv <- relevel(diversity$hiv, ref = "Unexposed")
 summary(div_bf <- lm(Shannon ~ hiv, data = diversity)) #no difference in univariable analysis
 summary(div_mv <- lm(Shannon ~ age + hiv + wood + season + abx + uri_rec2, data = diversity))
 
-#No association between hIV status and alpha diversity measures among exclusively breastfed children
+#No association between hIV status and alpha diversity measures among breastfed children
 ```
 
 #### Beta diversity
@@ -4323,7 +4180,12 @@ BC.dist=vegdist(otu_trans, method="euclidean")
 
 #hiv + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
 adonis2(BC.dist ~ hiv + age, data = bf, permutations = 1000, by = "margin")
-#Significant difference by HIV status among exclusively breastfed children (P = 0.007, R2 = 0.074) but not age (P=0.33, R2 = 0.021)
+#Significant difference by HIV status among breastfed children (P = 0.01, R2 = 0.039) and age (P=0.048, R2 = 0.018)
+
+#full multivariable permanova
+adonis2(BC.dist ~ hiv + season + uri_rec2 + age, data = bf, permutations = 1000, by = "margin")
+
+#In a multivariable model, HIV status (P=0.015, R2=0.036), season (P=0.02, R2=0.020), recent URI (P=0.04, R2=0.018), and age (P=0.03, R2=0.020) were a/w differences in overall microbiome composition among breastfed children in our cohort (R2 and p values are from by = "margin")
 
 #what was the average age among exclusively breasfed children?
 summary(bf$age) #median (IQR) 35 (19, 52); not that different from overall cohort
@@ -4359,7 +4221,7 @@ p_bf <- plot_ordination(chibf_clr, clr_pcoa, color = "hiv2") +
     axis.title = element_text(size = 12)) +
   scale_color_manual(values=c('#800000FF','#155F83FF', '#FFA319FF'))+
   stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.5) +
-  xlab("PC1 (19.6%)") + ylab("PC2 (8.5%)") +
+  xlab("PC1 (14.9%)") + ylab("PC2 (9.7%)") +
   scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
 
 p_bf
@@ -4374,10 +4236,10 @@ ntaxa(chibf.filter) #36
 
 otu <- as.data.frame(otu_table(chibf.filter, taxa_are_rows=TRUE))
 
-#need to remove the unidentified species from here (n=4): row 8, 19, 35, 36
+#need to remove the unidentified species from here (n=4): row 8, 20, 32, 33
   #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
 #corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp.
-otu <- otu[-c(8, 19, 35, 36),]
+otu <- otu[-c(8, 20, 32, 33),]
 
 #Corynebacterium sp. KPL1995 -> Corynebacterium pseudodiphtheriticum
 #Corynebacterium sp. KPL1986 -> Corynebacterium accolens
@@ -4392,111 +4254,23 @@ fit_data2 = Maaslin2(
   input_metadata = bf, 
   min_prevalence = 0.2,
   max_significance = 0.2,
-  output = "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/maaslin_mv_filt50_bf", 
+  output = "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/maaslin_mv_filt50_bf_redo", 
   fixed_effects = c("hiv2", "season", "age", "abx", "wood", "uri_rec2"),
   reference = c("hiv2,HUU children"))
 
-#CLWH have significantly less C. pseudodiphtheriticum!
+#Among children with any breastfeeding history, no differentially abundant species by HIV status (womp womp)
 ```
 
-#### Relative abundance plots
+#### Relative abundance plots: REDONE (see 9-28-23 file)
 
 ```{r}
-chi.rel <- transform_sample_counts(chi_bf, function(Abundance) Abundance/sum(Abundance))
-sample_sums(chi.rel)  # This is a sanity check to make sure that relative abundance was calculated for each sample prior to pooling data
-#All samples add to 1
-melted_df <- psmelt(chi.rel)
-#clean up melted_df
-melted_df <- within(melted_df, rm(sib_weight, sib_sex, sib_height, sib_muac, sib_race, sib_bfeed_1,
-                                  sib_bfeed_2, sib_uri_recent, sib_uri_current, sib_pcr_1, sib_pcr_2,
-                                  sib_bcg, sib_hepb, sib_clinic, sib_clinic_dx___5, sib_clinic_dx_oth,
-                                  sib_hosp, sib_meds, sib_meds_name, sibmo, sibyr, sib_vl1_weeks, sib_vl_weeks2, sib_med_days, sib_dpt, sib_pcv, sib_rota, sib_polio, sib_measles, sib_age))
-melted_df <- within(melted_df, rm(samp_storage, enr_clinic, enr_clinic_other, mat_np))
-
-#RELATIVE ABUNDANCE PLOTS
-# Create dataframes with overall relative abundances of phyla and genera
-melted_df$Phylum <- as.character(melted_df$Phylum)
-phyla_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum), FUN=sum)
-phyla_abundances$x <- (phyla_abundances$x)/(nsamples(chi.rel))
-names(phyla_abundances)[names(phyla_abundances) == 'x'] <- 'phyla_Ab'
-sum(phyla_abundances$phyla_Ab)    # Should sum to 1 (sum of relative abundances of phyla)
-nrow(phyla_abundances)            # Corresponds to # of unique phyla: 116
-
-melted_df$Genus <- as.character(melted_df$Genus)
-genus_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,
-                                                           OTU=melted_df$OTU), FUN=mean)
-genus_abundances <- aggregate(genus_abundances$x, by=list(Phylum=genus_abundances$Phylum,
-                                                          Genus=genus_abundances$Genus), FUN=sum)
-names(genus_abundances)[names(genus_abundances) == 'x'] <- 'genus_Ab'
-sum(genus_abundances$genus_Ab)    # Should sum to 1 (sum of relative abundances of genera)
-nrow(genus_abundances)            # Corresponds to # of unique genera: 2146
-abundances <- merge(genus_abundances, phyla_abundances, by="Phylum")
-
-melted_df$Species <- as.character(melted_df$Species)
-species_abundances <- aggregate(melted_df$Abundance, by=list(Phylum=melted_df$Phylum, Genus=melted_df$Genus,Species=melted_df$Species,
-                                                             OTU=melted_df$OTU), FUN=mean)
-species_abundances <- aggregate(species_abundances$x, by=list(Phylum=species_abundances$Phylum,
-                                                              Genus=species_abundances$Genus, Species=species_abundances$Species), FUN=sum)
-names(species_abundances)[names(species_abundances) == 'x'] <- 'species_Ab'
-sum(species_abundances$species_Ab)    # Should sum to 1 (sum of relative abundances of genera)
-nrow(species_abundances)            # Corresponds to # of unique species: 6708 ***WHY is this different from 6709?###
-abundances <- merge(abundances, species_abundances, by=c("Phylum", "Genus"))
-#merging on Phylum AND Genus gets rid of the phylum.x and phylum.y problem we were having earlier
-
-phyla_abundances <- arrange(phyla_abundances, desc(phyla_Ab)) 
-# Create a df with the top 5 phyla
-TOPPhyla <- unique(phyla_abundances$Phylum[1:5])
-phylum_df <- phyla_abundances[phyla_abundances$Phylum %in% TOPPhyla,]
-phylum_df$Phylum <- factor(phylum_df$Phylum, levels = phylum_df$Phylum[order(-phylum_df$phyla_Ab)])
-
-genus_abundances <- arrange(genus_abundances, desc(genus_Ab))  
-TOPGenera <- unique(genus_abundances$Genus[1:10])
-genus_df <- genus_abundances[genus_abundances$Genus %in% TOPGenera,]
-genus_df$Genus <- factor(genus_df$Genus, levels = genus_df$Genus[order(-genus_df$genus_Ab)])
-
-#create df with top 10 species
-species_abundances <- arrange(species_abundances, desc(species_Ab))  
-TOPSpecies <- unique(species_abundances$Species[1:10])
-species_df <- species_abundances[species_abundances$Species %in% TOPSpecies,]
-species_df$Species <- factor(species_df$Species, levels = species_df$Species[order(-species_df$species_Ab)])
-
-# Rename species other than top10 as "Other" in creating dataframe relative_df
-relative_df <- merge(melted_df, abundances, by=c("Genus", "Species"))
-
-relative_df$Species[!(relative_df$Species %in% TOPSpecies)] <- "Other"
-sum(relative_df$Abundance) #sums to 49.00032 (and we have n=49 kids...?)
-table(relative_df$Species)
-
-#already generated our chisp2 color palette
-
-#CREATING RELATIVE ABUNDANCE PLOT
-relative_df$subject_abundances <- (relative_df$Abundance)/(length(unique(relative_df$Sample))) 
-#abbreviate HIV status
-relative_df$hiv2 <- NA
-relative_df$hiv2 [relative_df$hiv == "Infected"] <- "CLWH"
-relative_df$hiv2 [relative_df$hiv == "Exposed Uninfected"] <- "HEU children"
-relative_df$hiv2 [relative_df$hiv == "Unexposed"] <- "HUU children"
-table(relative_df$hiv2)
-#matches up with table(relative_df$hiv)
-relative_df$hiv2 <- as.factor(relative_df$hiv2)
-relative_df$hiv2 <- reorder(relative_df$hiv2, new.order=c("CLWH", "HEU children", "HUU children"))
-
-relative_df$Species <- reorder(relative_df$Species, new.order=c("Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus haemolyticus", "Haemophilus influenzae", "Micrococcus luteus", "Moraxella catarrhalis", "Moraxella lacunata", "Moraxella nonliquefaciens", "Streptococcus pneumoniae", "Other"))
-
-spec_bf <- ggplot(relative_df[order(relative_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) +   geom_bar(stat="identity", position="fill") + theme_classic() + theme(
-  legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) +  
-  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus haemolyticus*", "*Haemophilus influenzae*", "*Micrococcus luteus*", "*Moraxella catarrhalis*", "*Moraxella lacunata*", "*Moraxella nonliquefaciens*", "*Streptococcus pneumoniae*", "Other")) +
-  ylab("Mean relative abundance") 
-
-bf_plot <- plot(spec_bf)
-
 #Create supplemental sensitivity analysis figure
-fig_bf <- plot_grid(p_bf, bf_plot, labels = c('A', 'B'), align = "h", axis = "b", label_size = 12, rel_widths = c(1, 1.5))
+fig_bf <- plot_grid(p_bf, spec_bf, labels = c('A', 'B'), align = "h", axis = "b", label_size = 12, rel_widths = c(1, 1.3))
 fig_bf
 
-ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig_bf.pdf", plot = fig_bf, dpi = 300, width = 11, height = 4)
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig_bf_V2.pdf", plot = fig_bf, dpi = 300, width = 11, height = 4)
 
-png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig S_bf.png",
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig S_bf_V2.png",
     width = 11, height = 4, units = 'in', res = 600)
 fig_bf
 dev.off()
