@@ -224,6 +224,23 @@ png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/decontam_b
 bar_decontam
 dev.off()
 
+###UPDATE 9-25-23: MK: which species present in 0.1 but NOT 0.05 are recognized as reagant contaminants?
+#will generate tables of 0.05 contam (n=29) and taxa present in 0.1 but not 0.05 (n=24)
+#table of 0.05 contaminants
+confreq05 <- subset(contamdf.freq.05, contamdf.freq.05$contaminant=="TRUE")
+setDT(confreq05, keep.rownames = "Species")
+table(confreq05$Species)
+write.csv(confreq05, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Kaiju_contam_freq_0.05.csv")
+
+#table of 0.1 contaminants 
+confreq <- subset(contamdf.freq, contamdf.freq$contaminant=="TRUE")
+setDT(confreq, keep.rownames = "Species")
+table(confreq$Species)
+
+#source for pulling out unique values: https://stackoverflow.com/questions/65063106/identify-unique-values-of-2-data-frames-in-r
+confreq_unique <-dplyr::setdiff(confreq, confreq05)
+write.csv(confreq_unique, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Kaiju_contam_freq_unique.csv")
+
 #Step 3: identify contaminants using prevalence approach [SKIPPING 6 MAY 2022]
 sample_data(phy.kaiju)$is.neg <- sample_data(phy.kaiju)$class == "Control"
 contamdf.prev <- isContaminant(phy.kaiju, method="prevalence", neg="is.neg")

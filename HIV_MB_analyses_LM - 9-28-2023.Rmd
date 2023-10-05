@@ -1,0 +1,485 @@
+---
+title: "HIV Microbiome Analyses - Patel et al"
+author: "Sweta Patel"
+date: "10/4/2023"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**PULL IN ALL DEMOGRAPHICS CODE, ETC HERE**
+
+We need to re-do all of our relative abundance plots with the same dataframe as the source. So we will create melted_df here (skipping relative_df) and recreate our relative abundance plot from new figure 1 to make sure that looks consistent. Next, we will filter our melted_df dataframe to create the following relative abundance plots:
+
+1. CD4 class normal vs low (Fig 1D)
+2. any breastfeeding vs not (Fig S3)
+3. sibling pairs (Fig S4)
+4. HEU, HUU, and immunocompetent vs immunocompromised CLWH (Fig S6)
+
+###All relative abundance plots
+
+####Creating original melted_df dataframe
+```{r}
+chi_prune = subset_samples(pruned, subject == "child")
+phy.otus <- transform_sample_counts(chi_prune, function(Abundance) Abundance/sum(Abundance))
+otu_df <- psmelt(phy.otus)
+otu_df$OTU <- as.character(otu_df$OTU)
+otu_abundances <- aggregate(otu_df$Abundance, by=list(OTU=otu_df$OTU), FUN=sum)
+otu_abundances$x <- (otu_abundances$x)/(nsamples(chi_prune))
+names(otu_abundances)[names(otu_abundances) == 'x'] <- 'otu_Ab'
+sum(otu_abundances$otu_Ab)  #sums to 1
+nrow(otu_abundances)        #6709 species
+remove(phy.otus, otu_df)
+
+# Agglomerate taxa into species --> already done, so no need to do again
+# Transform to relative abundances
+chi.rel <- transform_sample_counts(chi_prune, function(Abundance) Abundance/sum(Abundance))
+sample_sums(chi.rel)  # This is a sanity check to make sure that relative abundance was calculated for each sample prior to pooling data
+#All samples add to 1
+melted_df <- psmelt(chi.rel)
+
+#Now create a dataframe of species abundances that we can then arrange in order. Will rename everything that is not the top 10 as "other"
+melted_df$Species <- as.character(melted_df$Species)
+species_abundances <- aggregate(melted_df$Abundance, by=list(Species=melted_df$Species,
+                                                           OTU=melted_df$OTU), FUN=mean)
+species_abundances <- aggregate(species_abundances$x, by=list(Species=species_abundances$Species), FUN=sum)
+names(species_abundances)[names(species_abundances) == 'x'] <- 'species_Ab'
+sum(species_abundances$species_Ab)    # Should sum to 1 (sum of relative abundances of species)
+nrow(species_abundances)            # Corresponds to # of unique species: 6706 ***WHY is this different from 6709?###
+
+#create rule for top 10 species
+species_abundances <- arrange(species_abundances, desc(species_Ab))  
+TOPSpecies <- unique(species_abundances$Species[1:10])
+species_df <- species_abundances[species_abundances$Species %in% TOPSpecies,]
+species_df$Species <- factor(species_df$Species, levels = species_df$Species[order(-species_df$species_Ab)])
+
+#rename all non-top 10 species in melted_df as "other" and see if this works
+melted_df$Species[!(melted_df$Species %in% TOPSpecies)] <- "Other"
+sum(melted_df$Abundance) #sums to 143 exactly; n=143 so tracks?
+table(melted_df$Species)
+
+#so far so good! all of our top 10 species are consistent
+```
+
+Next, we will create the color palette and variables needed for Figure 1B
+
+```{r}
+#To generate our standard color palette for this manuscript: 
+library(RColorBrewer)
+library(scales)
+chisp2 <- c("#293352", "#800000FF", "#767676FF", "#FFA319FF", "#8A9045FF", "#155F83FF", "#C16622FF", "#4D004B", "#8F3931FF", "#58593FFF", "#350E20FF")
+show_col(chisp2)
+
+#source for rotating x labels: https://stackoverflow.com/questions/1330989/rotating-and-spacing-axis-labels-in-ggplot2
+melted_df$subject_abundances <- (melted_df$Abundance)/(length(unique(melted_df$Sample))) 
+#abbreviate HIV status
+melted_df$hiv2 <- NA
+melted_df$hiv2 [melted_df$hiv == "Infected"] <- "CLWH"
+melted_df$hiv2 [melted_df$hiv == "Exposed Uninfected"] <- "HEU children"
+melted_df$hiv2 [melted_df$hiv == "Unexposed"] <- "HUU children"
+table(melted_df$hiv2)
+table(melted_df$hiv)
+#matches up with table(melted_df$hiv)
+melted_df$hiv2 <- as.factor(melted_df$hiv2)
+melted_df$hiv2 <- reorder(melted_df$hiv2, new.order=c("CLWH", "HEU children", "HUU children"))
+melted_df$Species <- factor(melted_df$Species)
+###FIRST, create figure without re-ordering anything, screenshot it, and then create a new version that is re-ordered and compare the 2. The point of this is to make sure we're not causing any errors in the renaming process
+
+##############
+#NO REORDERING
+##############
+all_raw <- ggplot(melted_df[order(melted_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) +
+  geom_bar(stat="identity", position="fill") + theme_classic() + 
+  theme(legend.position="right", 
+  legend.text= element_markdown(),
+  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + 
+  scale_fill_manual(values = chisp2)
+
+#save for comparison as png
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig1b_raw.png", width = 9, height = 5, units = 'in', res = 600)
+all_raw
+dev.off()
+```
+
+- Now will create our barplot for figure 1B with the species reordered
+
+```{r}
+#reorder species names
+melted_df$Species <- reorder(melted_df$Species, new.order=c("Corynebacterium accolens", "Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
+
+library(ggtext)
+p2 <- ggplot(melted_df[order(melted_df$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) +
+  geom_bar(stat="identity", position="fill") + theme_classic() + 
+  theme(legend.position="right", 
+  legend.text= element_markdown(),
+  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + 
+  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  xlab("HIV Status") + ylab("Mean relative abundance") 
+
+p2
+#this looks right when compared to prior figure 1b and species_df abundances (overall stacked rows eyeball as expected based on overall abundances)
+
+#can we create a variable with abundance by HIV status?
+melted_df$hiv_abundances <- (melted_df$Abundance)/(length(unique(melted_df$hiv2))) 
+table(melted_df$hiv_abundances) #nope
+#what if we aggregate species abundances within our melted_df dataframe?
+melted_df$species_abundances <- aggregate(melted_df$Abundance, by=list(OTU=melted_df$OTU), FUN=mean) #mismatch in rows
+
+```
+
+#####How can we check our numbers? 
+
+There is probably a more efficient way to do this, but for now will create individual dataframes for our top 10 species and compare abundances by our variable of interest (hiv and cd4 status for fig 1, etc) to make sure what we are visualizing in the plot makes sense.
+
+Creating species-specific dataframes:
+
+```{r}
+#Corynebacterium accolens
+cor_acc <- filter(melted_df, Species == "Corynebacterium accolens")
+summary(cor_acc$Abundance)
+tapply(cor_acc$Abundance, cor_acc$hiv2, summary)
+
+#Corynebacterium propinquum
+cor_p <- filter(melted_df, Species == "Corynebacterium propinquum")
+summary(cor_p$Abundance) #matches up with species_df abundance
+tapply(cor_p$Abundance, cor_p$hiv2, summary)
+
+#Corynebacterium pseudodiphtheriticum
+cor_ps <- filter(melted_df, Species == "Corynebacterium pseudodiphtheriticum")
+summary(cor_ps$Abundance)
+tapply(cor_ps$Abundance, cor_ps$hiv2, summary)
+
+#Dolosigranulum pigrum
+dpig <- filter(melted_df, Species == "Dolosigranulum pigrum")
+summary(dpig$Abundance)
+tapply(dpig$Abundance, dpig$hiv2, summary)
+
+#Haemophilus influenzae
+hflu <- filter(melted_df, Species == "Haemophilus influenzae")
+summary(hflu$Abundance)
+tapply(hflu$Abundance, hflu$hiv2, summary)
+
+#Moraxella cattarhalis
+mcat <- filter(melted_df, Species == "Moraxella catarrhalis")
+summary(mcat$Abundance)
+tapply(mcat$Abundance, mcat$hiv2, summary) 
+
+#Moraxella lincolnii
+mlin <- filter(melted_df, Species == "Moraxella lincolnii")
+summary(mlin$Abundance)
+tapply(mlin$Abundance, mlin$hiv2, summary) 
+
+#Moraxella nonliquefaciens
+mnon <- filter(melted_df, Species == "Moraxella nonliquefaciens")
+summary(mnon$Abundance)
+tapply(mnon$Abundance, mnon$hiv2, summary)
+
+#Staphylococcus aureus
+sa <- filter(melted_df, Species == "Staphylococcus aureus")
+summary(sa$Abundance)
+tapply(sa$Abundance, sa$hiv2, mean)
+
+#Streptococcus pneumoniae
+spneum <- filter(melted_df, Species == "Streptococcus pneumoniae")
+summary(spneum$Abundance)
+tapply(spneum$Abundance, spneum$hiv2, mean)
+
+#Other
+oth <- filter(melted_df, Species == "Other")
+summary(oth$Abundance)
+aggregate(Abundance ~ Species, data = oth, sum)
+#sum of all Other abundances = 25.47148; if we divide this by our total # children (n=143), does this give us an average of all the other species present? --> comes out to 0.1781222; if we add this to the abundances in our species_df dataframe, it adds up to 1!!!
+aggregate(Abundance ~ Species + hiv2, data = oth, sum)
+#CLWH: 7.805837/44 = 0.1774054
+#HEU:  9.548323/49 = 0.1948637
+#HUU:  8.117322/50 = 0.1623464
+
+#Created table in excel with this data; roughly looks to match up with our plot
+```
+
+
+####CD4 classification: normal vs low
+```{r}
+#create a subsetted df of melted_df that only has CLWH
+melt_cd4 <- subset(melted_df, melted_df$hiv == "Infected")
+table(melt_cd4$Species)
+sum(melt_cd4$Abundance) #confirmed n=44
+
+#create our CD4 variables in that dataframe
+melt_cd4$newest_cd4 <- NA
+melt_cd4$newest_cd4 [melt_cd4$chi_cd4_weeks1 < melt_cd4$chi_cd4_weeks2] <- 1
+melt_cd4$newest_cd4 [melt_cd4$chi_cd4_weeks2 < melt_cd4$chi_cd4_weeks1] <- 2
+melt_cd4$newest_cd4 [melt_cd4$chi_cd4_weeks2 < 0] <- 1  #we want to include the cd4 collected BEFORE enrollment where possible
+melt_cd4$newest_cd4 [is.na(melt_cd4$chi_cd4_perc_2)] <- 1    #if we are missing cd4_2, we will use cd4_1
+melt_cd4$newest_cd4 [is.na(melt_cd4$chi_cd4_perc_1)] <- 2    #one child is missing cd4_1 but has cd4_2
+melt_cd4$newest_cd4 [is.na(melt_cd4$chi_cd4_perc_1) & is.na(melt_cd4$chi_cd4_perc_2)] <- NA
+table(melt_cd4$newest_cd4)
+
+#create new dataframe without B-45 and B-52 (aka new df with children missing CD4 data removed)
+melt_cd4 <- subset(melt_cd4, !is.na(newest_cd4))
+#confirm sum
+sum(melt_cd4$Abundance)
+melt_cd4$Var1 <- melt_cd4$chi_cd4_perc_1
+melt_cd4$Var2 <- melt_cd4$chi_cd4_perc_2
+
+melt_cd4 <- melt_cd4 %>% rowwise() %>%
+  mutate(newest_cd4perc = get(paste0('Var', newest_cd4)))
+
+summary(melt_cd4$newest_cd4perc)
+table(melt_cd4$newest_cd4perc)
+
+#make new variable for immune competent CD4 or not, with CD4 percentage >=25% = immune competent
+melt_cd4$cd4nL <- NA
+melt_cd4$cd4nL [melt_cd4$newest_cd4perc >=25] <- "1"
+melt_cd4$cd4nL [melt_cd4$newest_cd4perc < 25] <- "0"
+table(melt_cd4$cd4nL)  #11 kids with CD4% < 25 (when you divide sum by 6709 rows per participant)
+
+#New variable for CD4 cutoff
+melt_cd4$cd4cat <- NA
+melt_cd4$cd4cat [melt_cd4$cd4nL==1] <- "Normal CD4"
+melt_cd4$cd4cat [melt_cd4$cd4nL==0] <- "Low CD4"
+table(melt_cd4$cd4cat)
+class(melt_cd4$cd4cat)
+melt_cd4$cd4cat <- as.factor(melt_cd4$cd4cat)
+melt_cd4$cd4cat <- reorder(melt_cd4$cd4cat, new.order=c("Low CD4", "Normal CD4"))
+
+#create plot without adjusting labels (though NOTE: we already re-ordered the species variable in our OG melted_df dataframe)
+cd4_raw <- ggplot(melt_cd4[order(melt_cd4$Species, decreasing = TRUE),], aes(x=cd4cat, y=subject_abundances, fill=Species)) +
+  geom_bar(stat="identity", position="fill") + theme_classic() + 
+  theme(legend.position="right", 
+  legend.text= element_markdown(),
+  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + 
+  scale_fill_manual(values = chisp2)
+#continues to look like V2 of our figure 1D (which looks different from V1 of figure 1D but also has different species)
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig1d_raw.png", width = 9, height = 5, units = 'in', res = 600)
+cd4_raw
+dev.off()
+```
+
+- Now recreate Figure 1D with the reformatted labels
+```{r}
+p4 <- ggplot(melt_cd4[order(melt_cd4$Species, decreasing = TRUE),], aes(x=cd4cat, y=subject_abundances, fill=Species)) +
+  geom_bar(stat="identity", position="fill") + theme_classic() + 
+  theme(legend.position="right", 
+  legend.text= element_markdown(),
+  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + 
+  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  xlab("HIV Status") + ylab("Mean relative abundance")
+
+p4
+```
+
+Will check our figure against the mean relative abundances of each species
+
+```{r}
+cor_acc <- filter(melt_cd4, Species == "Corynebacterium accolens")
+summary(cor_acc$Abundance)
+tapply(cor_acc$Abundance, cor_acc$cd4cat, mean)
+
+#Corynebacterium propinquum
+cor_p <- filter(melt_cd4, Species == "Corynebacterium propinquum")
+tapply(cor_p$Abundance, cor_p$cd4cat, mean)
+
+#Corynebacterium pseudodiphtheriticum
+cor_ps <- filter(melt_cd4, Species == "Corynebacterium pseudodiphtheriticum")
+tapply(cor_ps$Abundance, cor_ps$cd4cat, mean)
+
+#Dolosigranulum pigrum
+dpig <- filter(melt_cd4, Species == "Dolosigranulum pigrum")
+tapply(dpig$Abundance, dpig$cd4cat, mean)
+
+#Haemophilus influenzae
+hflu <- filter(melt_cd4, Species == "Haemophilus influenzae")
+tapply(hflu$Abundance, hflu$cd4cat, mean)
+
+#Moraxella cattarhalis
+mcat <- filter(melt_cd4, Species == "Moraxella catarrhalis")
+tapply(mcat$Abundance, mcat$cd4cat, mean) 
+
+#Moraxella lincolnii
+mlin <- filter(melt_cd4, Species == "Moraxella lincolnii")
+tapply(mlin$Abundance, mlin$cd4cat, mean) 
+
+#Moraxella nonliquefaciens
+mnon <- filter(melt_cd4, Species == "Moraxella nonliquefaciens")
+tapply(mnon$Abundance, mnon$cd4cat, mean)
+
+#Staphylococcus aureus
+sa <- filter(melt_cd4, Species == "Staphylococcus aureus")
+tapply(sa$Abundance, sa$cd4cat, mean)
+
+#Streptococcus pneumoniae
+spneum <- filter(melt_cd4, Species == "Streptococcus pneumoniae")
+tapply(spneum$Abundance, spneum$cd4cat, mean)
+
+#Other
+oth <- filter(melt_cd4, Species == "Other")
+summary(oth$Abundance)
+aggregate(Abundance ~ Species + cd4cat, data = oth, sum)
+#Low CD4: 2.730539/11 = 0.2482308
+#Normal CD4: 4.779737/31 = 0.1541851
+
+```
+
+Our numbers match well to our updated figure 1D, so I am confident about the validity of the figure.
+
+####Breastfeeding sensitivity analysis
+
+```{r}
+#create new variable in melted_df for any breastfeeding
+#should have 84 children with any breastfeeding and 59 children who were only formula fed
+melted_df$bfeed_any <- NA
+melted_df$bfeed_any [melted_df$bfeed_1 == 1 | melted_df$bfeed_1 == 3] <- "Yes"
+melted_df$bfeed_any [melted_df$bfeed_1 == 2] <- "No"
+table(melted_df$bfeed_any) #when you divide by 6709 rows per child, consistent (59 No, 84 Yes)
+
+table(child$bfeed_1)
+child$bfeed_any <- NA
+child$bfeed_any [child$bfeed_1 == 1 | child$bfeed_1 == 3] <- "Yes"
+child$bfeed_any [child$bfeed_1 == 2] <- "No"
+table(child$bfeed_any)
+table(child$bfeed_any, child$hiv) #should have 21 CLWH, 16 HEU, and 47 HUU kids
+
+#now subset out by breastfeeding status 
+melt_bf <- subset(melted_df, melted_df$bfeed_any == "Yes")
+table(melt_bf$Species)
+sum(melt_bf$Abundance) #84; matches up
+```
+
+- create figures now with this dataframe
+
+```{r}
+class(melt_bf$bfeed_any)
+
+#create plot and then compare to actual relative abundances
+spec_bf <- ggplot(melt_bf[order(melt_bf$Species, decreasing = TRUE),], aes(x=hiv2, y=subject_abundances, fill=Species)) +
+  geom_bar(stat="identity", position="fill") + theme_classic() + 
+  theme(legend.position="right", 
+  legend.text= element_markdown(),
+  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + 
+  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  xlab("HIV Status") + ylab("Mean relative abundance")
+
+spec_bf
+```
+
+Will check our figure against the mean relative abundances of each species
+
+```{r}
+#Corynebacterium accolens
+cor_acc <- filter(melt_bf, Species == "Corynebacterium accolens")
+tapply(cor_acc$Abundance, cor_acc$hiv2, mean)
+
+#Corynebacterium propinquum
+cor_p <- filter(melt_bf, Species == "Corynebacterium propinquum")
+tapply(cor_p$Abundance, cor_p$hiv2, mean)
+
+#Corynebacterium pseudodiphtheriticum
+cor_ps <- filter(melt_bf, Species == "Corynebacterium pseudodiphtheriticum")
+tapply(cor_ps$Abundance, cor_ps$hiv2, mean)
+
+#Dolosigranulum pigrum
+dpig <- filter(melt_bf, Species == "Dolosigranulum pigrum")
+tapply(dpig$Abundance, dpig$hiv2, mean)
+
+#Haemophilus influenzae
+hflu <- filter(melt_bf, Species == "Haemophilus influenzae")
+tapply(hflu$Abundance, hflu$hiv2, mean)
+
+#Moraxella cattarhalis
+mcat <- filter(melt_bf, Species == "Moraxella catarrhalis")
+tapply(mcat$Abundance, mcat$hiv2, mean) 
+
+#Moraxella lincolnii
+mlin <- filter(melt_bf, Species == "Moraxella lincolnii")
+tapply(mlin$Abundance, mlin$hiv2, mean) 
+
+#Moraxella nonliquefaciens
+mnon <- filter(melt_bf, Species == "Moraxella nonliquefaciens")
+tapply(mnon$Abundance, mnon$hiv2, mean)
+
+#Staphylococcus aureus
+sa <- filter(melt_bf, Species == "Staphylococcus aureus")
+tapply(sa$Abundance, sa$hiv2, mean)
+
+#Streptococcus pneumoniae
+spneum <- filter(melt_bf, Species == "Streptococcus pneumoniae")
+tapply(spneum$Abundance, spneum$hiv2, mean)
+
+#Other
+oth <- filter(melt_bf, Species == "Other") #562716/6709 = 83.8748
+summary(oth$Abundance)
+aggregate(Abundance ~ Species + hiv2, data = oth, sum)
+#have 21 CLWH, 16 HEU, and 47 HUU kids
+#CLWH: 3.047206/21 = 0.145105
+#HEU:  3.721417/16 = 0.2325886
+#HUU: 7.243559/47 = 0.1541183
+```
+
+Our numbers match well to our updated figure 1D, so I am confident about the validity of the figure.
+
+####Sibling pairs (Fig S4)
+
+PROBLEM: we created our melted_df dataframe using only child samples, so this dataframe does not include child samples. What if we create a melted_df_all dataframe and see what the top 10 species look like? Ideally top 10 species will be the same, and we can subset all subsequent analyses from melted_df_all
+
+```{r}
+table(meta_prune$subject)
+chisib_prune = subset_samples(pruned, subject != "mom")
+
+phy.otus <- transform_sample_counts(chisib_prune, function(Abundance) Abundance/sum(Abundance))
+otu_df <- psmelt(phy.otus)
+otu_df$OTU <- as.character(otu_df$OTU)
+otu_abundances <- aggregate(otu_df$Abundance, by=list(OTU=otu_df$OTU), FUN=sum)
+otu_abundances$x <- (otu_abundances$x)/(nsamples(chisib_prune))
+names(otu_abundances)[names(otu_abundances) == 'x'] <- 'otu_Ab'
+sum(otu_abundances$otu_Ab)  #sums to 1
+nrow(otu_abundances)        #6709 species
+remove(phy.otus, otu_df)
+
+# Agglomerate taxa into species --> already done, so no need to do again
+# Transform to relative abundances
+chisib.rel <- transform_sample_counts(chisib_prune, function(Abundance) Abundance/sum(Abundance))
+sample_sums(chisib.rel)  # This is a sanity check to make sure that relative abundance was calculated for each sample prior to pooling data
+#All samples add to 1
+melted_df_all <- psmelt(chisib.rel)
+
+#Now create a dataframe of species abundances that we can then arrange in order. Will rename everything that is not the top 10 as "other"
+melted_df_all$Species <- as.character(melted_df_all$Species)
+species_abundances <- aggregate(melted_df_all$Abundance, by=list(Species=melted_df_all$Species,
+                                                           OTU=melted_df_all$OTU), FUN=mean)
+species_abundances <- aggregate(species_abundances$x, by=list(Species=species_abundances$Species), FUN=sum)
+names(species_abundances)[names(species_abundances) == 'x'] <- 'species_Ab'
+sum(species_abundances$species_Ab)    # Should sum to 1 (sum of relative abundances of species)
+nrow(species_abundances)            # Corresponds to # of unique species: 6706 ***WHY is this different from 6709?###
+
+#create rule for top 10 species
+species_abundances <- arrange(species_abundances, desc(species_Ab))  
+TOPSpecies <- unique(species_abundances$Species[1:10])
+species_df <- species_abundances[species_abundances$Species %in% TOPSpecies,]
+species_df$Species <- factor(species_df$Species, levels = species_df$Species[order(-species_df$species_Ab)])
+
+#rename all non-top 10 species in melted_df as "other" and see if this works
+melted_df_all$Species[!(melted_df_all$Species %in% TOPSpecies)] <- "Other"
+sum(melted_df_all$Abundance) #sums to 153 exactly; n=153 so tracks?
+table(melted_df_all$Species)
+
+
+melt_sib <- subset(melted_df, melted_df$bfeed_any == "Yes")
+sib_pair = subset_samples(pruned, sample_id == "B.09.CHI" | sample_id == "B.09.SIB" | sample_id == "B.16.CHI" | 
+                            sample_id == "B.16.SIB" | sample_id == "B.17.CHI" | sample_id == "B.17.SIB" | sample_id == "B.20.CHI" |
+                            sample_id == "B.20.SIB" | sample_id == "B.23.CHI" | sample_id == "B.23.SIB" | sample_id == "B.25.CHI" |
+                            sample_id == "B.25.SIB" | sample_id == "B.32.CHI" | sample_id == "B.32.SIB" | sample_id == "B.35.CHI" |
+                            sample_id == "B.35.SIB" | sample_id == "B.48.CHI" | sample_id == "B.48.SIB")
+```
+
+####HEU, HUU, and immunocompetent vs immunocompromised CLWH (Fig S6)
