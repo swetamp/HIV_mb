@@ -343,6 +343,11 @@ fig1 <- plot_grid(p1, p2, p3, p4, labels = "AUTO", nrow = 2, ncol = 2, align = "
 fig1
 
 ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig1NEW_V3.pdf", plot = fig1, dpi = 300, height = 9, width = 11)
+
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig1NEW_V3.png",
+    width = 11, height = 9, units = 'in', res = 600)
+fig1
+dev.off()
 ```
 
 ####Breastfeeding sensitivity analysis
