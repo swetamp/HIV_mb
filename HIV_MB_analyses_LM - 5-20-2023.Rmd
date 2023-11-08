@@ -4258,7 +4258,17 @@ fit_data2 = Maaslin2(
   fixed_effects = c("hiv2", "season", "age", "abx", "wood", "uri_rec2"),
   reference = c("hiv2,HUU children"))
 
-#Among children with any breastfeeding history, no differentially abundant species by HIV status (womp womp)
+#Maaslin with HEU as reference
+fit_data2 = Maaslin2(
+  input_data = otu, 
+  input_metadata = bf, 
+  min_prevalence = 0.2,
+  max_significance = 0.2,
+  output = "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/maaslin_mv_filt50_bf_HEUref", 
+  fixed_effects = c("hiv2", "season", "age", "abx", "wood", "uri_rec2"),
+  reference = c("hiv2,HEU children"))
+
+#Among children with any breastfeeding history, no differentially abundant species by HIV status between CLWH and HUU children, BUT species remained differentially abundant between HEU and CLWH
 ```
 
 #### Relative abundance plots: REDONE (see 9-28-23 file)
