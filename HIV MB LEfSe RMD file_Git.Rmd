@@ -1,0 +1,640 @@
+---
+title: "Fogarty LEfSe"
+author: "Sweta Patel"
+date: "11/1/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Compiled Nov 1, 2022 by Sweta Patel
+
+This RMD file contains the LEfSe code run for the HIV Microbiome analysis.
+
+```{r include=FALSE}
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(phyloseq)
+library(tidyr)
+library(vegan)
+library(metagenomeSeq)
+library(httr)
+library(gridExtra)
+library(data.table)
+library(RColorBrewer)
+library(scales)
+library(gsubfn)
+library(readxl)
+library(microbiome)
+library(MASS)
+library(Maaslin2)
+library(cowplot)
+library(pscl)
+library(microbiomeMarker)
+library(mia)
+library(lefser)
+```
+
+Why use LEfSe? We are interested identifying markers (in our case, species) that distinguish between groups within our study:
+
+- Among children with HIV, are there species that are differentially abundant by CD4 status (low vs normal)? Detectable vs undetectable viral load? TMP-SMX use? Antibiotic use?
+
+- Are there species that differentiate children with HIV and normal CD4 from HEU or HUU children? What about differentiating children with HIV and LOW CD4 from HEU or HUU children?
+
+- Are there species that distinguish children with HIV from their HEU siblings? OR because we only have 9 sibling pairs, is our sample size too small to use LEfSe?
+
+**Methods**
+I ran LEfSe using 2 different packages in R: lefser and MicrobiomeMarker. Lefser does not allow you to set any parameters and data must be in Summarized Experiment format, but the results are largely more consistent with our initial univariable Wilcoxon tests. MicrobiomeMarker allows you to set parameters, but identifed a lot of low abundance species as being differentially abundant. After discussion with research group, I will filter taxa with fewer than 50 counts across the dataset and repeat LEfSe. 
+
+*Sources referenced for the packages used*
+- Lefser tutorial: https://waldronlab.io/lefser/articles/lefser.html
+
+- SummarizedExperiment: https://bioconductor.org/help/course-materials/2019/BSS2019/04_Practical_CoreApproachesInBioconductor.html
+
+- converting pseq to SE (2.3.2): https://microbiome.github.io/OMA/data-introduction.html
+
+- microbiomeMarker tutorial: https://github.com/yiluheihei/microbiomeMarker/blob/master/vignettes/microbiomeMarker-vignette.Rmd (under differential analysis section) AND https://yiluheihei.github.io/microbiomeMarker/reference/run_lefse.html
+
+### LEfSe: children with HIV
+
+#### Normal vs low CD4
+
+```{r}
+#will use non-transformed cd4 pseq object; Coldata = cd4nL
+#can't use with pseq object or dataframe; must use with a SummarizedExperiment object
+  #TreeSummarizedExperiment --> derived from SE and contains space for a phylogenetic tree 
+
+cd4 <- readRDS("cd4.10312022.rds")
+
+cd4_TSE <- makeTreeSummarizedExperimentFromPhyloseq(cd4)
+
+test <- lefser(cd4_TSE, groupCol = "cd4nL")
+head(test)
+lefserPlot(test)
+#we get results, but when we plot out there is only 1 group shown; previously reported to developers on github --> impossible to tell who "group 1" is from the test alone
+#ref: https://github.com/waldronlab/lefser/issues/15
+#given our prior wilcoxon results, it is fair to assume that group 1 here in test2.df is normal cd4
+
+#will use default normalization (CPM), set lower wilcoxon and KW cutoffs than original paper (which used 0.05), and keep default LDA cutoff of 2:
+cd4lefse <- run_lefse(
+  cd4,
+  wilcoxon_cutoff = 0.01,
+  group = "cd4nL",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+cd4lefse
+head(marker_table(cd4lefse))
+#summary: cd4nL = 1 aka normal CD4 a/w high LDA for D. pigrum, C propinquum, C. pseudodipht, Alloiococcus otitus, and Nocardioides NOS
+  #cd4nL = 0 aka low CD4 a/w high LDA for N. lactamica
+
+#can plot this out:
+plot_ef_bar(cd4lefse)
+test <- plot_ef_bar(cd4lefse) + scale_fill_manual(values=c("0" = '#800000FF', "1" = '#155F83FF')) + 
+  theme_classic() +
+    theme(
+      plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+      # legend.text = element_text(size = 12),
+      legend.position = "none",
+      # legend.title = element_blank(),
+      axis.text = element_text(size = 10),
+      axis.text.y = element_text(face = "italic"),
+      axis.title = element_blank())
+
+#For legend purposes, will be easier to save as a csv file and then make the barplots from there so we can properly format the legends and labels
+cd4lefse <- as.data.frame(as(marker_table(cd4lefse),"matrix"),stringsAsFactors=FALSE)
+write.csv(cd4lefse, 'mm_lefse_cd4.csv')
+```
+
+This was our original lefse code; what do our results look like if we filter at 50, remove unidentified species from the otu table, import back into pseq object, and re-run? 
+
+```{r}
+cd4.filter <- filter_taxa(cd4, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(cd4.filter) #45
+
+otu <- as.data.frame(otu_table(cd4.filter, taxa_are_rows=TRUE))
+#need to remove the unidentified species from here: row 10, 25, 29, 41
+  #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Paenibacillus sp. P22, Prevotellaceae bacterium Marseille-P2826
+otu <- otu[-c(10, 25, 29, 41),]
+
+#Corynebacterium sp. KPL1995 -> Corynebacterium pseudodiphtheriticum
+#Corynebacterium sp. KPL1986 -> Corynebacterium accolens
+#Haemophilus sp. C1 -> Haemophilus haemolyticus
+
+row.names(otu)[3] <- "Haemophilus haemolyticus"
+row.names(otu)[9] <- "Corynebacterium pseudodiphtheriticum"
+row.names(otu)[10] <- "Corynebacterium accolens"
+
+#Kept getting error messages when I tried to import the new OTU table into cd4.filter; ?maybe because otu table and taxtable were now mismatched. So cleared out the relevant rows from the taxtable and then made a new pseq object: cd4.filter2
+  #source: https://github.com/joey711/phyloseq/issues/1018
+bloop <- data.frame(sample_data(cd4.filter))
+taxtable <- as.data.frame(as(tax_table(cd4.filter),"matrix"),stringsAsFactors=FALSE)
+taxtable <- taxtable[-c(10, 25, 29, 41),]
+rownames(taxtable) <- rownames(otu)
+
+otumat = otu_table(as.matrix(otu), taxa_are_rows=T)
+taxmat = tax_table(as.matrix(taxtable))
+bloop <- sample_data(bloop)
+
+cd4.filter2 = phyloseq(otumat, taxmat, bloop)
+#Make sure it worked --> success!
+otu <- as.data.frame(otu_table(cd4.filter2, taxa_are_rows=TRUE))
+
+#Now we can run lefse on our filtered object
+cd4lefse.f <- run_lefse(
+  cd4.filter2,
+  wilcoxon_cutoff = 0.01,
+  group = "cd4nL",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+cd4lefse.f
+head(marker_table(cd4lefse.f))
+
+cd4lefse.f <- as.data.frame(as(marker_table(cd4lefse.f),"matrix"),stringsAsFactors=FALSE)
+write.csv(cd4lefse.f, 'mm_lefse_cd4_filt.csv')
+
+#with default wilcox and kw cutoffs (from original paper)
+cd4lefse.f2 <- run_lefse(
+  cd4.filter2,
+  wilcoxon_cutoff = 0.05,
+  group = "cd4nL",
+  kw_cutoff = 0.05,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+cd4lefse.f2 <- as.data.frame(as(marker_table(cd4lefse.f2),"matrix"),stringsAsFactors=FALSE) #9 species now, including some of unclear clinical significance
+# write.csv(cd4lefse.f, 'mm_lefse_cd4_filt.csv')
+
+#lefser package
+cd4_TSE_filt <- makeTreeSummarizedExperimentFromPhyloseq(cd4.filter2)
+test <- lefser(cd4_TSE_filt, groupCol = "cd4nL")
+head(test)
+lefserPlot(test)
+write.csv(test, 'lefser_cd4_filt.csv')
+```
+
+- will use this same filtered pseq object to look for differences by tmp-smx and abx use (since we used the wilcoxon results from the cd4 pseq object in our manuscript)
+
+#### TMP-SMX ppx vs not
+
+```{r}
+tmpsmx <- lefser(cd4_TSE_filt, groupCol = "tmpsmx")  #S. aureus, S. argentus, and M. luteus differentially abundant by TMP-SMX
+head(tmpsmx)
+lefserPlot(tmpsmx)  #the problem is figuring out which group is 0 and which group is 1
+#correlating to our wilcoxon testing, group 1 should be +TMPSMX use
+    #in our wilcoxon testing, kids exposed to TMP-SMX had a higher rel abundance of S. aureus and lower median rel abund of M. luteus
+    #but here, group 0 has a lower median rel abundance of M. luteus; not sure how to interpret the groups
+write.csv(tmpsmx, 'lefser_tmpsmx_filt.csv')
+
+tmplefse.f <- run_lefse(
+  cd4.filter2,
+  wilcoxon_cutoff = 0.01,
+  group = "tmpsmx",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  lda_cutoff = 2
+)
+
+#Error message: Error in sig_otus[, wilcoxon_p] : incorrect number of dimensions
+bloop <- data.frame(sample_data(cd4.filter2))
+table(bloop$tmpsmx) #no missing data, and the above code worked in our original lefse; what is the problem? --> removed the taxa_rank specification and it worked
+
+tmplefse.f #5 markers; only 1 is a species (S. aureus)
+head(marker_table(tmplefse.f))
+#can we turn the marker table into a dataframe? Yes!
+mm_tmp <- as.data.frame(as(marker_table(tmplefse.f),"matrix"),stringsAsFactors=FALSE)
+write.csv(mm_tmp, 'mm_lefse_tmpsmx_filt.csv')
+```
+
+#### Antibiotic use vs not
+```{r}
+# abx <- lefser(cd4_TSE_filt, groupCol = "abx")  #no species differentially abundant by abx use using lefser
+
+abxlefse.f <- run_lefse(
+  cd4.filter2,
+  wilcoxon_cutoff = 0.01,
+  group = "abx",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+#No marker identified
+#What if we broaden out our parameters?
+abxlefse.f <- run_lefse(
+  cd4.filter2,
+  wilcoxon_cutoff = 0.05,
+  group = "abx",
+  kw_cutoff = 0.05,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+#2 markers identified: S. aureus and Moraxella osloensis; keep at 0.01 and no results pending CFAR/LD review
+  #Also note that using 0.05 cutoffs gives a stack imbalance warning
+```
+
+#### Virally suppressed vs not
+
+```{r}
+#Must create a new filtered viral load pseq object
+vl <- readRDS("vl.10312022.rds")
+vl.filter <- filter_taxa(vl, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(vl.filter) #46
+
+otu <- as.data.frame(otu_table(vl.filter, taxa_are_rows=TRUE))
+#need to remove the unidentified species from here: row 11, 26, 30, 42
+  #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Paenibacillus sp. P22, Prevotellaceae bacterium Marseille-P2826
+otu <- otu[-c(11, 26, 30, 42),]
+
+#Now clear out the relevant rows from the taxtable and make a new pseq object: vl.filter2
+  #source: https://github.com/joey711/phyloseq/issues/1018
+bloop <- data.frame(sample_data(vl.filter))
+taxtable <- as.data.frame(as(tax_table(vl.filter),"matrix"),stringsAsFactors=FALSE)
+taxtable <- taxtable[-c(11, 26, 30, 42),]
+rownames(taxtable) <- rownames(otu)
+
+otumat = otu_table(as.matrix(otu), taxa_are_rows=T)
+taxmat = tax_table(as.matrix(taxtable))
+bloop <- sample_data(bloop)
+
+vl.filter2 = phyloseq(otumat, taxmat, bloop)
+#Make sure it worked --> success!
+otu <- as.data.frame(otu_table(vl.filter2, taxa_are_rows=TRUE))
+
+#lefser
+vl_TSE_filt <- makeTreeSummarizedExperimentFromPhyloseq(vl.filter2)
+# viral <- lefser(vl_TSE_filt, groupCol = "vl_suppr") #no species identified
+
+#microbiomeMarker: no markers identified
+vllefse.f <- run_lefse(
+  vl.filter2,
+  wilcoxon_cutoff = 0.01,
+  group = "vl_suppr",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+```
+
+### LEfSe: children with HIV - HEU sibling comparisons
+
+- we have n=18 children for this analysis (9 CLWH, 9 siblings); is this too small for LEfSe?
+
+```{r}
+#Must create a new filtered sib pair pseq object
+sib_pair <- readRDS("sib10312022.rds")
+sib.filter <- filter_taxa(sib_pair, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(sib.filter) #72
+
+otu <- as.data.frame(otu_table(sib.filter, taxa_are_rows=TRUE))
+#need to remove the unidentified species from here (n=10): row 22, 28, 34, 47, 49, 54, 56, 57, 62, 65 
+  #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Porphyromonas sp. COT-290 OH3588, Streptococcus sp. SK643,  Paenibacillus sp. P22, Enterobacter sp. R4-368, uncultured Clostridium sp., Veillonella sp. DNF00869, Prevotellaceae bacterium Marseille-P2826, Alloprevotella sp. oral taxon 473, Psychrobacter sp. Cmf 22.2, Neisseria sp. HMSC064E01
+
+otu <- otu[-c(22, 28, 34, 47, 49, 54, 56, 57, 62, 65),]
+
+#Now clear out the relevant rows from the taxtable and make a new pseq object: vl.filter2
+  #source: https://github.com/joey711/phyloseq/issues/1018
+bloop <- data.frame(sample_data(sib.filter))
+taxtable <- as.data.frame(as(tax_table(sib.filter),"matrix"),stringsAsFactors=FALSE)
+taxtable <- taxtable[-c(22, 28, 34, 47, 49, 54, 56, 57, 62, 65),]
+rownames(taxtable) <- rownames(otu)
+
+otumat = otu_table(as.matrix(otu), taxa_are_rows=T)
+taxmat = tax_table(as.matrix(taxtable))
+bloop <- sample_data(bloop)
+
+sib.filter2 = phyloseq(otumat, taxmat, bloop)
+#Make sure it worked --> success!
+remove(otu)
+otu <- as.data.frame(otu_table(sib.filter2, taxa_are_rows=TRUE))
+
+#lefser
+sib_TSE_filt <- makeTreeSummarizedExperimentFromPhyloseq(sib.filter2)
+sib <- lefser(sib_TSE_filt, groupCol = "subject") 
+
+write.csv(sib, 'lefser_sibpair_filt.csv')
+
+#microbiomeMarker: no markers identified with cutoff of 0.01
+siblefse.f <- run_lefse(
+  sib.filter2,
+  wilcoxon_cutoff = 0.01,
+  group = "subject",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+#cutoffs of 0.05: still no marker identified
+siblefse.f <- run_lefse(
+  sib.filter2,
+  wilcoxon_cutoff = 0.05,
+  group = "subject",
+  kw_cutoff = 0.05,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+#No markers identified at cutoffs of 0.01, 0.05, with/without taxa_rank.
+remove(bloop, otu, sib, sib_TSE_filt, sib.filter, siblefse.f, taxtable, otumat, taxmat)
+```
+
+### LEfSe: IMMUNOCOMPETENT children with HIV vs HEU and HUU children
+
+```{r}
+#Must create a new filtered pseq object
+hucd4 <- readRDS("hucd4.10312022.rds")
+hucd4.filter <- filter_taxa(hucd4, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(hucd4.filter) #51
+
+otu <- as.data.frame(otu_table(hucd4.filter, taxa_are_rows=TRUE))
+#need to remove the unidentified species from here (n=5): row 10, 27, 44, 45, 47
+  #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp., Nocardioides sp. Root122
+
+otu <- otu[-c(10, 27, 44, 45, 47),]
+
+#Now clear out the relevant rows from the taxtable and make a new pseq object: hucd4.filter2
+  #source: https://github.com/joey711/phyloseq/issues/1018
+bloop <- data.frame(sample_data(hucd4.filter))
+taxtable <- as.data.frame(as(tax_table(hucd4.filter),"matrix"),stringsAsFactors=FALSE)
+taxtable <- taxtable[-c(10, 27, 44, 45, 47),]
+rownames(taxtable) <- rownames(otu)
+
+otumat = otu_table(as.matrix(otu), taxa_are_rows=T)
+taxmat = tax_table(as.matrix(taxtable))
+bloop <- sample_data(bloop)
+
+hucd4.filter2 = phyloseq(otumat, taxmat, bloop)
+#Make sure it worked --> success!
+remove(otu)
+otu <- as.data.frame(otu_table(hucd4.filter2, taxa_are_rows=TRUE))
+
+hu <- data.frame(sample_data(hucd4))
+hu$hiv2 <- NA
+hu$hiv2 [hu$hiv == "Infected"] <- "CLWH"
+hu$hiv2 [hu$hiv == "Exposed Uninfected" | hu$hiv == "Unexposed"] <- "Uninfected"
+table(hu$hiv2)
+
+#now import back into pseq obj
+sample_data(hucd4.filter2) <- as.data.frame(hu)
+#now see if it worked:
+bloop <- data.frame(sample_data(hucd4.filter2))
+table(bloop$hiv2)
+#success!
+remove(bloop)
+
+#lefser: must use a 2 level variable for this 
+hu_TSE_filt <- makeTreeSummarizedExperimentFromPhyloseq(hucd4.filter2)
+hu_lefser <- lefser(hu_TSE_filt, groupCol = "hiv2")
+head(hu_lefser)
+lefserPlot(hu_lefser)
+#our prior analysis did not ID differentially abundant species; so which group is group 1?
+write.csv(hu_lefser, 'lefser_hucd4_filt.csv')
+
+#VERSION 2: MicrobiomeMarker
+#Original huttenhower/sagat paper: used cutoffs of 0.05 for both tests and an lda cutoff of 2
+#Does microbiome marker allow us to test a 3 level variable? Yes!
+#no markers identified with 0.01 cutoff
+hulefse.f <- run_lefse(
+  hucd4.filter2,
+  wilcoxon_cutoff = 0.01,
+  group = "hiv",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+#what if we use the same 2 group comparison as we did for lefser? Only C. aurimucosum remains significantly enriched in the uninfected group
+hulefse.f <- run_lefse(
+  hucd4.filter2,
+  wilcoxon_cutoff = 0.01,
+  group = "hiv2",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  # taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+#0.05 cutoffs: 3 species identified. S. aureus and K. palustris enriched in HEU children, and C. aurimucosum enriched in HUU children. But since we've used 0.01 cutoffs thus far, will continue 0.01 for consistency 
+hulefse.f <- run_lefse(
+  hucd4.filter2,
+  wilcoxon_cutoff = 0.05,
+  group = "hiv",
+  kw_cutoff = 0.05,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+# mm_hu <- as.data.frame(as(marker_table(hulefse.f),"matrix"),stringsAsFactors=FALSE)
+# write.csv(mm_hu, 'mm_lefse_hucd4.csv')
+
+remove(bloop, hu, hu_lefser, hu_TSE_filt, hucd4.filter, hulefse.f, mm_hu, otu, taxtable, otumat, taxmat)
+```
+
+### LEfSe: IMMUNOCOMPROMISED children with HIV vs HEU and HUU children
+
+```{r}
+#Must create a new filtered pseq object
+hlowcd4 <- readRDS("hlowcd4.10312022.rds")
+hlowcd4.filter <- filter_taxa(hlowcd4, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(hlowcd4.filter) #48
+
+otu <- as.data.frame(otu_table(hlowcd4.filter, taxa_are_rows=TRUE))
+#need to remove the unidentified species from here (n=5): row 9, 26, 41, 42, 44
+  #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp., Nocardioides sp. Root122
+
+otu <- otu[-c(9, 26, 41, 42, 44),]
+
+#Now clear out the relevant rows from the taxtable and make a new pseq object: hucd4.filter2
+  #source: https://github.com/joey711/phyloseq/issues/1018
+bloop <- data.frame(sample_data(hlowcd4.filter))
+taxtable <- as.data.frame(as(tax_table(hlowcd4.filter),"matrix"),stringsAsFactors=FALSE)
+taxtable <- taxtable[-c(9, 26, 41, 42, 44),]
+rownames(taxtable) <- rownames(otu)
+
+otumat = otu_table(as.matrix(otu), taxa_are_rows=T)
+taxmat = tax_table(as.matrix(taxtable))
+bloop <- sample_data(bloop)
+
+hlowcd4.filter2 = phyloseq(otumat, taxmat, bloop)
+#Make sure it worked --> success!
+remove(otu)
+otu <- as.data.frame(otu_table(hlowcd4.filter2, taxa_are_rows=TRUE))
+
+#Lefser can only do 2 group comparisons; collapse HEU + HUU into 1 group and run against CLWH (VERY skewed sample sizes)
+hlow <- data.frame(sample_data(hlowcd4.filter2))
+hlow$hiv2 <- NA
+hlow$hiv2 [hlow$hiv == "Infected"] <- "CLWH"
+hlow$hiv2 [hlow$hiv == "Exposed Uninfected" | hlow$hiv == "Unexposed"] <- "Uninfected"
+table(hlow$hiv2)
+
+#now import back into pseq obj
+sample_data(hlowcd4.filter2) <- as.data.frame(hlow)
+#now see if it worked:
+bloop <- data.frame(sample_data(hlowcd4.filter2))
+table(bloop$hiv2)
+#success!
+remove(bloop)
+
+#lefser: must use a 2 level variable for this 
+hlow_TSE_filt <- makeTreeSummarizedExperimentFromPhyloseq(hlowcd4.filter2)
+hlow_lefser <- lefser(hlow_TSE_filt, groupCol = "hiv2")
+head(hlow_lefser)
+
+write.csv(hlow_lefser, 'lefser_hlowcd4_filt.csv')
+
+#VERSION 2: MicrobiomeMarker
+#Original huttenhower/sagat paper: used cutoffs of 0.05 for both tests and an lda cutoff of 2
+#Does microbiome marker allow us to test a 3 level variable? Yes!
+hlowlefse.f <- run_lefse(
+  hlowcd4.filter2,
+  wilcoxon_cutoff = 0.01,
+  group = "hiv",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+mm_hlow <- as.data.frame(as(marker_table(hlowlefse.f),"matrix"),stringsAsFactors=FALSE)
+write.csv(mm_hlow, 'mm_lefse_hlowcd4_filt.csv')
+
+remove(hlow, hlow_lefser, hlow_TSE_filt, hlowcd4.filter, hlowlefse.f, otu, taxtable, otumat, taxmat)
+```
+
+### Figure S3: LEfSe results
+
+- based on our discussion with MK on 11/10, we will use our microbiomeMarker results to create a supplemental figure with our significant lefse analyses 
+
+First: import all the csv files we created using mm and the filtered phyloseq object. We only had significant results for 3 comparisons.
+
+```{r}
+mm_cd4 <- read.csv("mm_lefse_cd4_filt.csv")
+mm_hlow <- read.csv("mm_lefse_hlowcd4_filt.csv")
+mm_tmpsmx <- read.csv("mm_lefse_tmpsmx_filt.csv")
+
+#create new variable to use in our legend
+mm_cd4$cd4 <- NA
+mm_cd4$cd4 [mm_cd4$enrich_group == 0] <- "Low CD4"
+mm_cd4$cd4 [mm_cd4$enrich_group == 1] <- "Normal CD4"
+table(mm_cd4$cd4)
+
+#for tmp-smx: only 1 species identified (s. aureus); remainder are broader tax classes, so we will isolate s. aureus
+mm_tmpsmx_sa <- subset(mm_tmpsmx, ef_lda == 4.989556) #tried multiple methods, this was the simplest
+#create new variables; since we only have 1 obs, make the code simple too 
+mm_tmpsmx_sa$species <- "Staphylococcus aureus"
+mm_tmpsmx_sa$cat <- "TMP-SMX use"
+```
+
+Now make our bar plots and align them using cowplot. Of note, microbiomeMarker returns all positive values
+
+```{r}
+cd4 <- ggplot(mm_cd4, aes(x=ef_lda, y=feature, fill=cd4)) +
+  geom_bar(stat="identity") +
+  ggtitle("CD4+ percentage") +
+  xlab("LDA score") +
+  scale_fill_manual(values=c('#800000FF', '#155F83FF')) +
+  # scale_x_continuous(breaks = seq(-6, 4, 1), limits = c(-5, 3)) +
+  scale_y_discrete(labels=function(x){sub("\\s", "\n", x)}) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    legend.text = element_text(size = 12),
+    legend.position = "right",
+    legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.text.y = element_text(face = "italic"),
+    axis.title.y = element_blank()) 
+
+mm_hlow$ef_lda <- as.numeric(mm_hlow$ef_lda)
+#relevel to HIV classes grouped together
+mm_hlow$feature <- as.factor(mm_hlow$feature)
+mm_hlow$feature <- reorder(mm_hlow$feature, new.order=c("Corynebacterium pseudodiphtheriticum", "Corynebacterium aurimucosum", "Corynebacterium propinquum", "Corynebacterium accolens"))
+
+hlow <- ggplot(mm_hlow, aes(x=ef_lda, y=feature, fill=enrich_group)) +
+  geom_bar(stat="identity") +
+  ggtitle("HIV status") +
+  xlab("LDA score") +
+  scale_fill_manual(values=c('#800000FF', '#155F83FF')) +
+  # scale_x_continuous(breaks = seq(-6, 4, 1), limits = c(-5, 3)) +
+  scale_y_discrete(labels=function(x){sub("\\s", "\n", x)}) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    legend.text = element_text(size = 12),
+    legend.position = "right",
+    legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.text.y = element_text(face = "italic"),
+    axis.title.y = element_blank()) 
+
+tmp <- ggplot(mm_tmpsmx_sa, aes(x=ef_lda, y=species, fill=cat)) +
+  geom_bar(stat="identity") +
+  ggtitle("TMP-SMX use") +
+  xlab("LDA score") +
+  scale_fill_manual(values=c('#800000FF', '#155F83FF')) +
+  # scale_x_continuous(breaks = seq(-6, 4, 1), limits = c(-5, 3)) +
+  scale_y_discrete(labels=function(x){sub("\\s", "\n", x)}) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    legend.text = element_text(size = 12),
+    legend.position = "right",
+    legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.text.y = element_text(face = "italic"),
+    axis.title.y = element_blank())
+
+#Now combine into 1 figure
+right <- plot_grid(tmp, hlow,
+          labels = c('B', 'C'),
+          nrow = 2, 
+          label_size = 12,
+          rel_heights = c(0.45, 1),
+          align = "v")
+
+figS3 <- plot_grid(cd4, right,
+                  labels = c('A', '', ''),
+                  nrow = 1,
+                  label_size = 14, 
+                  rel_heights = c(0.7, 1),
+                  rel_widths = c(0.9, 1))
+                  # align = "v", axis = "b")
+
+png(file="figS3_v2.png",
+    width = 12, height = 4, units = 'in', res = 600)
+figS3
+dev.off()
+
+#note: figS3_v2 = with "LDA score" as x axis title and rel widths and heights adjusted 
+
+```
+
+
+
+
+
+
+
+
