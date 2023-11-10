@@ -164,6 +164,25 @@ head(marker_table(cd4lefse.f))
 cd4lefse.f <- as.data.frame(as(marker_table(cd4lefse.f),"matrix"),stringsAsFactors=FALSE)
 write.csv(cd4lefse.f, 'mm_lefse_cd4_filt.csv')
 
+#mmultigrp_strat parameter: “logical, for multiple group tasks, whether the test is performed in a one-against one (more strict) or in a one-against all setting, default FALSE”
+
+#we will re-run this model (11/2/23) with the mmultigrp_strat parameter set to default FALSE and see what the results look like:
+cd4lefse.f2 <- run_lefse(
+  cd4.filter2,
+  wilcoxon_cutoff = 0.01,
+  group = "cd4nL",
+  kw_cutoff = 0.01,
+  multigrp_strat = FALSE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+cd4lefse.f2
+head(marker_table(cd4lefse.f2))
+
+cd4lefse.f2 <- as.data.frame(as(marker_table(cd4lefse.f2),"matrix"),stringsAsFactors=FALSE)
+write.csv(cd4lefse.f2, '/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/mm_lefse_cd4_filt_V2.csv')
+
 #with default wilcox and kw cutoffs (from original paper)
 cd4lefse.f2 <- run_lefse(
   cd4.filter2,
@@ -455,7 +474,7 @@ remove(bloop, hu, hu_lefser, hu_TSE_filt, hucd4.filter, hulefse.f, mm_hu, otu, t
 
 ```{r}
 #Must create a new filtered pseq object
-hlowcd4 <- readRDS("hlowcd4.10312022.rds")
+hlowcd4 <- readRDS("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/hlowcd4.10312022.rds")
 hlowcd4.filter <- filter_taxa(hlowcd4, function(Abundance) mean(Abundance)>=50, TRUE)
 ntaxa(hlowcd4.filter) #48
 
@@ -465,6 +484,14 @@ otu <- as.data.frame(otu_table(hlowcd4.filter, taxa_are_rows=TRUE))
 #corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp., Nocardioides sp. Root122
 
 otu <- otu[-c(9, 26, 41, 42, 44),]
+
+#Corynebacterium sp. KPL1995 -> Corynebacterium pseudodiphtheriticum
+#Corynebacterium sp. KPL1986 -> Corynebacterium accolens
+#Haemophilus sp. C1 -> Haemophilus haemolyticus
+
+row.names(otu)[3] <- "Haemophilus haemolyticus"
+row.names(otu)[8] <- "Corynebacterium pseudodiphtheriticum"
+row.names(otu)[9] <- "Corynebacterium accolens"
 
 #Now clear out the relevant rows from the taxtable and make a new pseq object: hucd4.filter2
   #source: https://github.com/joey711/phyloseq/issues/1018
@@ -519,6 +546,21 @@ hlowlefse.f <- run_lefse(
 
 mm_hlow <- as.data.frame(as(marker_table(hlowlefse.f),"matrix"),stringsAsFactors=FALSE)
 write.csv(mm_hlow, 'mm_lefse_hlowcd4_filt.csv')
+
+#what happens if we change multigrp_strat to FALSE? Does this change the test from pairwise to global comparison? Or am I interpreting that incorrectly?
+hlowlefse.f2 <- run_lefse(
+  hlowcd4.filter2,
+  wilcoxon_cutoff = 0.01,
+  group = "hiv",
+  kw_cutoff = 0.01,
+  multigrp_strat = FALSE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+mm_hlow <- as.data.frame(as(marker_table(hlowlefse.f2),"matrix"),stringsAsFactors=FALSE)
+write.csv(mm_hlow, '/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/mm_lefse_hlowcd4_filt_v2.csv')
+
 
 remove(hlow, hlow_lefser, hlow_TSE_filt, hlowcd4.filter, hlowlefse.f, otu, taxtable, otumat, taxmat)
 ```

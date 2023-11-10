@@ -848,12 +848,25 @@ maaslin$feature <- gsub(".", " ", maaslin$feature, fixed = TRUE)
 maaslin$feature <- gsub("sp  KPL1995", "pseudodiphtheriticum", maaslin$feature, fixed = TRUE)
 maaslin$feature <- as.factor(maaslin$feature)
 #rename feature to species
-maaslin <- rename(maaslin, Species = 'feature')
+maaslin <- dplyr::rename(maaslin, Species = feature)
 #create new variable for positive or neg coefficient that we can use to add color to our figures
 maaslin$posneg <- NA
 maaslin$posneg [maaslin$coef >= 0] <- "Pos"
 maaslin$posneg [maaslin$coef < 0] <- "Neg"
 table(maaslin$posneg)
+
+#Do the same for our new (Oct 23) Maaslin model with HEU as the reference
+maas_heu <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/maaslin_mv_kaiju_filt50_v5_HEUref/significant_results.tsv", sep = "\t")
+class(maas_heu$feature)
+maas_heu$feature <- gsub(".", " ", maas_heu$feature, fixed = TRUE)
+maas_heu$feature <- as.factor(maas_heu$feature)
+#rename feature to species
+maas_heu <- dplyr::rename(maas_heu, Species = feature)
+#create new variable for positive or neg coefficient that we can use to add color to our figures
+maas_heu$posneg <- NA
+maas_heu$posneg [maas_heu$coef >= 0] <- "Pos"
+maas_heu$posneg [maas_heu$coef < 0] <- "Neg"
+table(maas_heu$posneg)
 
 #will create 4 horizontal barplots and use cowplot to align them into 1 figure
 #MAKE NEW VAR for coef + or neg and then use that for your barplot fill
@@ -919,8 +932,16 @@ m_u <- ggplot(m_uri, aes(x=coef, y=Species, fill=posneg)) +
 #hiv
 m_hiv <- subset(maaslin, metadata == "hiv")
 
+#Our Figure 2 shows effect sizes for differentially abundant taxa with a q<0.2; we see that our effect sizes for all other variables (season, age, etc) in the 2 different maaslin models we ran (one with HUU as ref, one with HEU as ref) are identical, so it seems reasonable to combine the HEU-HIV and HUU-HIV results into one panel as long as we have some way to differentiate the reference groups
+m_heu <- subset(maas_heu, metadata == "hiv")
+
+m_hiv2 <- rbind(m_hiv, m_heu)
+#relevel so all Coryne grouped together
+m_hiv2$Species <- reorder(m_hiv2$Species, new.order=c("Micrococcus luteus", "Corynebacterium pseudodiphtheriticum", "Corynebacterium aurimucosum", "Corynebacterium accolens"))
+#now we will bind them together to make one combined hiv dataframe and make a figure from that 
+
 #Source to split C. pseudo into 2 lines on the Y axis for space: https://stackoverflow.com/questions/20123147/add-line-break-to-axis-labels-and-ticks-in-ggplot
-m_h <- ggplot(m_hiv, aes(x=coef, y=Species, fill=posneg)) +
+m_h2 <- ggplot(m_hiv2, aes(x=coef, y=Species, fill=posneg)) +
   geom_bar(stat="identity") +
   ggtitle("HIV infection") +
   scale_fill_manual(values=c('#800000FF')) +
@@ -937,22 +958,23 @@ m_h <- ggplot(m_hiv, aes(x=coef, y=Species, fill=posneg)) +
     axis.title = element_blank()) +
   geom_errorbar(aes(xmin=coef-stderr, xmax=coef+stderr), width=.2) 
 
+
 #combine into 1 cowplot
-right <- plot_grid(m_h, m_u, m_a,
+right <- plot_grid(m_h2, m_u, m_a,
           labels = c('B', 'C', 'D'),
           nrow = 3, 
           label_size = 12,
-          rel_heights = c(1, 1, 1.75),
+          rel_heights = c(1.5, 0.8, 1.2),
           align = "v")
 
 fig3 <- plot_grid(m_s, right,
                   labels = c('A', '', '', ''),
                   nrow = 1,
                   label_size = 14, 
-                  rel_heights = c(1, 0.8))
+                  rel_heights = c(1, 1.2))
                   # align = "v", axis = "b")
 
-ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig2NEW(maaslin).pdf", plot = fig3, dpi = 300, width = 12, height = 4)
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig2NEW(maaslin)_V2b.pdf", plot = fig3, dpi = 300, width = 12, height = 5)
 ```
 
 ### K-medioid clustering
