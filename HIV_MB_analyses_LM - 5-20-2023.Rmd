@@ -1427,6 +1427,7 @@ summary(mylogit <- glm(clust2b ~ hiv + age + abx + uri_rec2, data = sampleDF, fa
 
 #we adjust all other analyses for season and wood smoke exposure as well, so for uniformity will do here: 
 class(sampleDF$wood2)
+sampleDF$wood2 <- as.factor(sampleDF$wood2)
 sampleDF$wood2 <- relevel(sampleDF$wood2, ref = "No")
 
 sampleDF$season <- as.factor(sampleDF$season)
@@ -1454,6 +1455,21 @@ p1 #HIV infection a/w cluster 2 (p=0.017) and age a/w cluster 3 (p=0.007)
 exp(coef(test1))
 #Obtaining 95% CI for our RR
 exp(confint(test1))
+
+#Why didn't we include abx in the multivariable model? It is one of our prespecified confounders.
+summary(test2 <- multinom(cluster ~ hiv + age + uri_rec2 + season + wood2 + abx, data = sampleDF))
+z2 <- summary(test2)$coefficients/summary(test2)$standard.errors
+z2
+#Calculate p-values using Wald tests (here z-tests).
+#2-tailed z test
+p2 <- (1 - pnorm(abs(z2), 0, 1)) * 2
+p2 #HIV infection (p=0.016) and wood (p=0.04) a/w cluster 2 and age (p=0.007) and uri sx (p=0.02) a/w cluster 3
+
+#The exponentiated regression coefficients are relative risk ratios for a unit change in the predictor variable
+## extract the coefficients from the model and exponentiate
+exp(coef(test2))
+#Obtaining 95% CI for our RR
+exp(confint(test2))
 ```
 *Summary of multivariable analysis*
 **In a multivariable logistic regression model adjusting for all covariables specified in our methods with presence/absence of cluster 2 as the outcome of interest, HIV infection was associated with presence of cluster 2 (S. pneumo - H. flu); OR (95% CI): 5.31 (1.66, 20.75).**
