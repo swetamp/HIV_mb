@@ -241,6 +241,11 @@ table(confreq$Species)
 confreq_unique <-dplyr::setdiff(confreq, confreq05)
 write.csv(confreq_unique, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Kaiju_contam_freq_unique.csv")
 
+#what is in our negative control?
+otu <- as.data.frame(otu_table(phy.kaiju, taxa_are_rows=TRUE))
+neg <- otu[207]
+table(neg$ext_neg_ctrl)
+
 #Step 3: identify contaminants using prevalence approach [SKIPPING 6 MAY 2022]
 sample_data(phy.kaiju)$is.neg <- sample_data(phy.kaiju)$class == "Control"
 contamdf.prev <- isContaminant(phy.kaiju, method="prevalence", neg="is.neg")
