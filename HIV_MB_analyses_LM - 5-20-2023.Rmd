@@ -1366,6 +1366,46 @@ table(sampleDF$dpt3, sampleDF$cluster)
 prop.table(table(sampleDF$dpt3, sampleDF$cluster), 2)
 # summary(table(sampleDF$dpt3, sampleDF$cluster))
 fisher.test(sampleDF$dpt3, sampleDF$cluster)
+
+#breastfeeding
+table(sampleDF$bfeed_1) #49 kids exclusively breastfed, 59 formula fed, and 35 received both breastmilk and formula
+sampleDF$bfeed_any <- NA
+sampleDF$bfeed_any [sampleDF$bfeed_1 == 1 | sampleDF$bfeed_1 == 3] <- "Yes"
+sampleDF$bfeed_any [sampleDF$bfeed_1 == 2] <- "No"
+table(sampleDF$bfeed_any)
+table(sampleDF$bfeed_any, sampleDF$cluster)
+prop.table(table(sampleDF$bfeed_any, sampleDF$cluster), 2)
+summary(table(sampleDF$bfeed_any, sampleDF$cluster))
+
+###Asked MK about growth percentile with available variables 9/19; need to calculate Z scores for height and weight.
+#R package available to calculate 
+#source for zscorer: https://github.com/nutriverse/zscorer
+library(zscorer)
+#sex needs to be coded as male (1) and female (2)
+sampleDF$sex2 <- NA
+sampleDF$sex2 [sampleDF$sex == 0] <- 1
+sampleDF$sex2 [sampleDF$sex == 1] <- 2
+table(sampleDF$sex)
+table(sampleDF$sex2) #matches up
+#age needs to be in days, not months
+sampleDF$age_d <- sampleDF$age*(30.4375) #confirmed that B-01 age and age_d match up
+
+#weight for age
+#ERROR: weight for U21 listed as 80.5 kg, corresponding to a z score of 37.6. Likely an error; will double check data entry with Charity
+#in the meantime, drop U21 from our wfa z score calculations
+sampleDF2 <- subset(sampleDF, study_id !="U.21")
+sampleDF2 <- addWGSR(data=sampleDF2, sex="sex2", firstPart = "weight", secondPart = "age_d", index="wfa")
+summary(sampleDF2$wfaz)
+hist(sampleDF2$wfaz) #roughly normal, slight left skew
+tapply(sampleDF2$wfaz, sampleDF2$cluster, summary)
+kruskal.test(sampleDF2$wfaz, sampleDF2$cluster)
+
+#height for age
+sampleDF3 <- addWGSR(data=sampleDF, sex="sex2", firstPart = "height", secondPart = "age_d", index="hfa")
+summary(sampleDF3$hfaz)
+hist(sampleDF3$hfaz) #roughly normal, slight left skew
+tapply(sampleDF3$hfaz, sampleDF3$cluster, summary)
+kruskal.test(sampleDF3$hfaz, sampleDF3$cluster)
 ```
 
 Combining profiles to look for specific associations given the barplots above for HIV status, wood smoke exposure, and antibiotic exposure:
@@ -4176,6 +4216,7 @@ summary(child$bfeed_2)
 #Create pseq object of breastfed children
 chi_bf = subset_samples(chi_prune, bfeed_1 != 2) #should have 84 kids and it does
 bf <- data.frame(sample_data(chi_bf))
+table(bf$hiv)
 ```
 
 #### Alpha diversity analyses 
