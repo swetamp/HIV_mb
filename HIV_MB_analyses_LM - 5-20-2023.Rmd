@@ -410,6 +410,11 @@ kruskal.test(Observed ~ subject, data = diversity)
 div_child <- subset(diversity, subject == "child")
 tapply(div_child$Observed, div_child$hiv, summary)
 kruskal.test(Observed ~ hiv, data = div_child) 
+
+#Export study IDs for SRA file:
+sra <- as.data.frame(div_child$sample_id, div_child$month, div_child$year)
+sra <- subset(div_child, select = c("sample_id", "month", "year"))
+write.csv(sra, '/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sample_ids.csv')
 ```
 
 #### Shannon
