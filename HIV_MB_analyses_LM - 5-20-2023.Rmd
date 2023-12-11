@@ -1124,6 +1124,36 @@ clust <- ggplot(data = p, aes(x = A1, y = A2)) +
 clust
 #Question: how to tell PC %? Standard axes are A1 and A2 instead of PC% and PC% --> created a pcoa plot by cluster below and used those PC%; make sure this is ok
 
+###UPDATE 12-10-23: MK wants names for the profiles, not numbers
+#Create new var in P that corresponds to data.cluster for profile names
+class(p$data.cluster) #factor
+p$dcname <- NA
+p$dcname [p$data.cluster == "1"] <- "CPD"
+p$dcname [p$data.cluster == "2"] <- "BIO"
+p$dcname [p$data.cluster == "3"] <- "MCA"
+p$dcname [p$data.cluster == "4"] <- "MNO"
+p$dcname [p$data.cluster == "5"] <- "CPR"
+p$dcname <- as.factor(p$dcname)
+table(p$data.cluster, p$dcname)
+p$dcname <- reorder(p$dcname, new.order = c("CPD", "BIO", "MCA", "MNO", "CPR"))
+
+library(ggpubr)
+clust2 <- ggplot(data = p, aes(x = A1, y = A2)) +
+  geom_point(data = p, aes(color = dcname), alpha=1, size=1.0) + 
+  scale_color_manual(values = chisp3) +
+  theme_classic() +
+    theme(
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 10),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 10))+
+  stat_ellipse(aes(color = dcname)) +
+  stat_stars(aes(color = dcname), show.legend = T) +
+  xlab("PC1 (22.6%)") +
+  ylab("PC2 (17.3%)") +
+  labs(color = "Microbiome Profile")+ 
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1))
+
 #save for ease of review; once you figure out how to update the axes accurately and finalize the figure, will need to save as an eps file (sample code below)
 png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/clust_v2.png",
     width = 12, height = 9, units = 'in', res = 600)
@@ -1685,11 +1715,18 @@ rownames(fig)[rownames(fig) == "11"] <- "Other"
 fig$tax = rownames(fig)
 
 fig = dplyr::select(fig, -Avg) %>%
-  dplyr::rename('1' = AvgDF1,
-                '2' = AvgDF2,
-                '3' = AvgDF3,
-                '4' = AvgDF4,
-                '5' = AvgDF5)
+  dplyr::rename('CPD' = AvgDF1,
+                'BIO' = AvgDF2,
+                'MCA' = AvgDF3,
+                'MNO' = AvgDF4,
+                'CPR' = AvgDF5)
+
+# fig = dplyr::select(fig, -Avg) %>%
+#   dplyr::rename('1' = AvgDF1,
+#                 '2' = AvgDF2,
+#                 '3' = AvgDF3,
+#                 '4' = AvgDF4,
+#                 '5' = AvgDF5)
 
 library(reshape2)
 f = melt(fig) 
@@ -1705,7 +1742,7 @@ clust_plot <- ggplot(f[order(f$Species, decreasing = TRUE),], aes(x=variable, y=
   legend.text=element_markdown(),
   legend.title = element_text(size=10),
   axis.title.y = element_text(size=10, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
-  axis.title.x = element_text(size=10), axis.text.x = element_text(size=10, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  axis.title.x = element_text(size=10), axis.text.x = element_text(size=10, vjust = 1, hjust = 0.5, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
   xlab("Microbiome profile") + ylab("Mean relative abundance") 
 
 clust_plot
@@ -1720,10 +1757,17 @@ dev.off()
 fig5 <- plot_grid(clust, clust_plot, labels = c('A', 'B'), align = "h", axis = "b", label_size = 12, rel_widths = c(1, 1.5))
 fig5
 
+fig5 <- plot_grid(clust2, clust_plot, labels = c('A', 'B'), align = "h", axis = "b", label_size = 12, rel_widths = c(1, 1.5))
+fig5
+
 ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig3NEW(clust).pdf", plot = fig5, dpi = 300, width = 11, height = 3.5)
 
 #UPDATED 9-22-23 with smaller axes and legend fonts per MK:
 ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig3NEW(clust)_V2.pdf", plot = fig5, dpi = 300, width = 11, height = 3.5)
+
+#UPDATED 12-10-23 with new profile names per MK
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig3NEW(clust)_V3.pdf", plot = fig5, dpi = 300, width = 11, height = 3.5)
+
 
 # #save as .eps file to comply with Lancet Microbe requirements
 # ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig5_clust.eps", width = 11, height = 3.5, units = "in")
@@ -1733,6 +1777,28 @@ ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig3NEW(clus
 #Save our cluster composition + relative abundances as a csv file
 write.csv(fig, '/Users/swetapatel/OneDrive - Duke University/Fogarty coding/cluster_comp.csv')
 
+###UPDATE 12-10-23; REDOING Cluster figure as above so need to rename the numeric labels and use abbreviations instead
+fig <- read.csv('/Users/swetapatel/OneDrive - Duke University/Fogarty coding/cluster_comp.csv')
+#redo our column names
+colnames(fig)[colnames(fig) == "tax"] <- "Species"
+colnames(fig)[colnames(fig) == "X1"] <- "CPD"
+colnames(fig)[colnames(fig) == "X2"] <- "BIO"
+colnames(fig)[colnames(fig) == "X3"] <- "MCA"
+colnames(fig)[colnames(fig) == "X4"] <- "MLI"
+colnames(fig)[colnames(fig) == "X5"] <- "CPR"
+
+fig$Species = factor(fig$Species, levels=c("Corynebacterium accolens", "Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum","Haemophilus influenzae","Moraxella catarrhalis", "Moraxella lincolnii", "Moraxella nonliquefaciens", "Staphylococcus aureus","Streptococcus pneumoniae","Other"))
+
+clust_plot2 <- ggplot(fig[order(fig$Species, decreasing = TRUE),], aes(x=variable, y=value, fill=Species)) + 
+  geom_bar(stat="identity", position="fill") + theme_classic() + 
+  theme(legend.position="right", 
+  legend.text=element_markdown(),
+  legend.title = element_text(size=10),
+  axis.title.y = element_text(size=10, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_text(size=10), axis.text.x = element_text(size=10, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  xlab("Microbiome profile") + ylab("Mean relative abundance") 
+
+clust_plot
 ```
 
 #### What do our clusters look like by immune status among CLWH?
