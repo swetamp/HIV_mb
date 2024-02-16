@@ -717,7 +717,31 @@ aggregate(Abundance ~ Species + hiv2, data = oth, sum)
 
 Our numbers match well to our updated figure, so I am confident about the validity of the figure.
 ```
+#### Sample sums (For Lancet Microbe appeal)
+We have our total number of paired reads that remained after processing via Kaiju and kneaddata, but what is left after we prune and use decontam for the children and siblings in our study? 
 
+```{r}
+sums <- sample_sums(chisib_prune)
+sums <- as.data.frame(sums)
+#save sample_ID as variable
+sums$sample_id <- rownames(sums)
+
+sorted_sums <- sums[order(sums$sums),]
+
+summary(sums$sums)
+
+#Now we will create a sample_sums variable just for the children and merge this with our metadata file to look for differences by HIV status:
+chi_prune = subset_samples(pruned, subject == "child")
+chisums <- sample_sums(chi_prune)
+chisums <- as.data.frame(chisums)
+#save sample_ID as variable
+chisums$sample_id <- rownames(chisums)
+summary(chisums$chisums)
+
+child2 <- merge(child, chisums, by="sample_id")
+tapply(child2$chisums, child$hiv, summary)
+kruskal.test(child2$chisums, child$hiv) 
+```
 
 ####EXTRA CODE (can be discarded)
 ```{r}
