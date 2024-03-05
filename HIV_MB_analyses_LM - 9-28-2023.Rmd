@@ -743,6 +743,65 @@ tapply(child2$chisums, child$hiv, summary)
 kruskal.test(child2$chisums, child$hiv) 
 ```
 
+#### Rarefaction curves (for LM appeal)
+- Ranacapa package in R --> has 'ggrare' function that M. Corder has used.
+- tutorial for ggrare: https://github.com/gauravsk/ranacapa/blob/master/R/ggrare.R
+- step parameter (ChatGPT explanation): The "step" parameter determines how much the rarefied sample size increases at each step of the rarefaction process. For example, if you set the step to 100, the rarefaction curve will be calculated for sample sizes increasing by increments of 100 reads.
+
+Choosing an appropriate step size depends on the distribution of reads across your samples and the desired resolution of your rarefaction curve. Smaller step sizes will result in more points on the rarefaction curve and finer resolution, but may also increase computation time, especially for large datasets. Conversely, larger step sizes will result in fewer points and coarser resolution but faster computation.
+
+Initially set step to 10 because I wasn't thinking of the number of reads - oops. Since I have a median of 77K reads per sample, should probably set to 1000 and go down from there depending on what the curves look like
+```{r}
+library(ranacapa)
+ggrare(chisib_prune, step = 1000, label = NULL, color = NULL,
+    plot = TRUE, parallel = FALSE, se = TRUE)
+
+p <- ggrare(chisib_prune, step = 1500, label = NULL, color = NULL,
+    plot = TRUE, parallel = FALSE, se = TRUE)
+
+#zooming in: start with sequence sample size (x axis) of 250K
+p1 <- p + coord_cartesian(xlim = c(0, 250000)) #visually appears most samples flatten by <25K reads, so zoom more:
+p2 <- p + coord_cartesian(xlim = c(0, 100000))
+p3 <- p + coord_cartesian(xlim = c(0, 25000))
+#Using prior plots of paired_reads (should have been sample_sums) vs #Observed species, we set a cutoff of 2500 reads; zoom in further to see what this looks like
+p4 <- p + coord_cartesian(xlim = c(0, 10000))
+#set Y lim to 750 to allow for more zooming
+p5 <- p + coord_cartesian(xlim = c(0, 10000), ylim = c(0,600))
+p6 <- p + coord_cartesian(xlim = c(0, 5000), ylim = c(0,600))
+
+rarefaction <- plot_grid(p, p1, p2, p3, p4, labels = "AUTO", nrow = 2, ncol = 3, align = "h", axis = "b")
+rarefaction  
+
+rarefaction2 <- plot_grid(p, p5, p6, labels = "AUTO", nrow = 1, ncol = 3, align = "h", axis = "b")
+rarefaction2
+
+#save panel images for d/w MK:
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/rarefaction_zoomx.pdf", plot = rarefaction, dpi = 300, height = 9, width = 11)
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/rarefaction_zoomxy.pdf", plot = rarefaction2, dpi = 300, height = 6, width = 11)
+```
+
+
+#### Sensitivity analysis discarding all samples with <10K reads (for LM appeal)
+- will use sample_sums in our pruned object and create a new pseq object that only contains samples with >10K reads (n=  130)
+
+Step 1: create 10Kpruned object
+- original plots and pruning decisions generated from decontaminated Kaiju pseq object documented in 'Fog KAIJU 10-6-22.R' file
+```{r}
+#Pruning to >10K
+chisib10K = prune_samples(sample_sums(chisib_prune)>=10000, chisib_prune)
+#how many species do we have in our pruned sample? 
+ntaxa(chisib10K)  #6709; unchanged from agglom, but we are down to 131 participants (note: this includes the sibling without a matching CLWH that was removed from the child-sib analyses; so total # children included in analysis between kids and sib pairs = 130)
+
+#metadata for 131 participants
+meta10K <- data.frame(sample_data(chisib10K))
+
+#save pruned pseq object
+saveRDS(chisib10K, file = "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/phy.chisib10K_03032024.rds", ascii = FALSE, version = NULL,
+        compress = FALSE, refhook = NULL)
+```
+
+
 ####EXTRA CODE (can be discarded)
 ```{r}
 chi_prune = subset_samples(pruned, subject == "child")
