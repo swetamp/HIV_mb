@@ -791,7 +791,7 @@ Step 1: create 10Kpruned object
 #Pruning to >10K
 chisib10K = prune_samples(sample_sums(chisib_prune)>=10000, chisib_prune)
 #how many species do we have in our pruned sample? 
-ntaxa(chisib10K)  #6709; unchanged from agglom, but we are down to 131 participants (note: this includes the sibling without a matching CLWH that was removed from the child-sib analyses; so total # children included in analysis between kids and sib pairs = 130)
+ntaxa(chisib10K)  #6709; unchanged from agglom, but we are down to 131 participants (153 - 131 = 22)
 
 #metadata for 131 participants
 meta10K <- data.frame(sample_data(chisib10K))
@@ -799,10 +799,218 @@ meta10K <- data.frame(sample_data(chisib10K))
 #save pruned pseq object
 saveRDS(chisib10K, file = "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/phy.chisib10K_03032024.rds", ascii = FALSE, version = NULL,
         compress = FALSE, refhook = NULL)
+
+#create pseq object with only the kids
+chi10k = subset_samples(chisib10K, subject == "child") #121 kids in analysis (down from 143)
+#child metadata
+chi10kmeta <- data.frame(sample_data(chi10k))
+```
+
+##### Alpha diversity analyses: >10K reads
+```{r}
+################
+#ALPHA DIVERSITY
+################
+#Create dataframe with diversity indices for each specimen using PRUNED pseq object
+diversity <- estimate_richness(chi10k, measures = c("Shannon", "Simpson", "Chao1", "Observed"))
+
+setDT(diversity, keep.rownames = TRUE)[]
+colnames(diversity) <- c("sample_id", "Observed", "Chao1", "se.chao1", "Shannon", "Simpson")
+rownames(diversity) <- diversity$sample_id
+diversity <- merge(diversity, chi10kmeta, by="sample_id")
+
+class(diversity$hiv) #character; need to make factor to relevel
+diversity$hiv <- as.factor(diversity$hiv)
+diversity$hiv <- relevel(diversity$hiv, ref = "Unexposed")
+
+class(diversity$wood) #integer; needs to be factor
+diversity$wood <- as.factor(diversity$wood)
+diversity$wood <- relevel(diversity$wood, ref = "0")
+
+class(diversity$season) #character; needs to be factor
+diversity$season <- as.factor(diversity$season)
+diversity$season <- relevel(diversity$season, ref = "Dry")
+
+class(diversity$abx) #character; needs to be factor
+diversity$abx <- as.factor(diversity$abx)
+diversity$abx <- relevel(diversity$abx, ref = "No")
+
+class(diversity$uri_rec2) #character; needs to be factor
+diversity$uri_rec2 <- as.factor(diversity$uri_rec2)
+diversity$uri_rec2 <- relevel(diversity$uri_rec2, ref = "No")
+
+########
+#SHANNON
+########
+hist(diversity$Shannon) #slight right skew but rel normal
+summary(diversity$Shannon) #median (IQR) 1.77 (1.46, 2.04); lower than full cohort: 1·85 (1·51, 2·26)
+summary(div_10k <- lm(Shannon ~ hiv, data = diversity)) #no difference in univariable analysis
+summary(div_10kmv <- lm(Shannon ~ age + hiv + wood + season + abx + uri_rec2, data = diversity)) #no difference in mv analysis
+
+######
+#CHAO1
+######
+#Is our Chao1 data normally distributed? 
+histogram(diversity$Chao1) #v right skewed
+qqnorm(diversity$Chao1, pch = 1, frame = FALSE)
+qqline(diversity$Chao1, col = "steelblue", lwd = 2)
+
+#What does it look like if we log transform it? Will this allow for parametric testing?
+diversity$Chao1_log <- log(diversity$Chao1)
+histogram(diversity$Chao1_log)
+qqnorm(diversity$Chao1_log, pch = 1, frame = FALSE)
+qqline(diversity$Chao1_log, col = "steelblue", lwd = 2)
+  #Looks very normal! Can use linear regression on transformed data
+
+#Chao1 median and IQR for all samples
+summary(diversity$Chao1) # median (IQR) = 166 (91, 299); higher than full cohort: 137 (68, 261)
+
+#analyses: no significant associations between covariables of interest and log transformed Chao1
+summary(aov(Chao1_log ~ hiv, data = diversity))
+summary(div_mv <- lm(Chao1_log ~ age + hiv + wood + season + abx + uri_rec2, data = diversity))
+
+#################
+#OBSERVED SPECIES
+#################
+tapply(diversity$Observed, diversity$hiv, summary)
+kruskal.test(Observed ~ hiv, data = diversity) #p = 0.22
+summary(obs_mv <- lm(Observed ~ age + hiv + wood + season + abx + uri_rec2, data = diversity))
+```
+**Summary: no variables were associated with measures of alpha diversity (Shannon index, log transformed Chao1, number of observed species) among children with >10K reads**
+
+[] do we need a boxplot? Can revisit and add code once complete remainder of analyses
+
+##### Beta diversity measures
+
+- CLR transform for PCOA plots and PERMANOVA
+
+```{r}
+chi10k_clr <- microbiome::transform(chi10k, "clr")
+```
+
+**Plots**
+
+```{r}
+#First: create new HIV variable as factor, then relevel
+table(chi10kmeta$hiv)
+chi10kmeta$hiv2 <- NA
+chi10kmeta$hiv2 [chi10kmeta$hiv == "Infected"] <- "CLWH"
+chi10kmeta$hiv2 [chi10kmeta$hiv == "Exposed Uninfected"] <- "HEU children"
+chi10kmeta$hiv2 [chi10kmeta$hiv == "Unexposed"] <- "HUU children"
+table(chi10kmeta$hiv2)
+class(chi10kmeta$hiv2)
+chi10kmeta$hiv2 <- as.factor(chi10kmeta$hiv2)
+chi10kmeta$hiv2 <- reorder(chi10kmeta$hiv2, new.order=c("CLWH", "HEU children", "HUU children"))
+
+#Import back into pseq (source: https://jacobrprice.github.io/2017/08/26/phyloseq-to-vegan-and-back.html)
+sample_data(chi10k_clr) <- as.data.frame(chi10kmeta)
+#now see if it worked:
+bloop <- data.frame(sample_data(chi10k_clr))
+table(bloop$hiv2)
+#success!
+remove(bloop)
+
+#Now ordinate and create PCOA plot
+clr_pcoa <- ordinate(chi10k_clr, method = "PCoA", distance = "euclidean")
+b1 <- plot_ordination(chi10k_clr, clr_pcoa, color = "hiv2") +
+  geom_point(size = 0.005) + theme_classic() + theme(
+    plot.title = element_text(size = 14, hjust = 0.5),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    legend.background = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)) +
+  scale_color_manual(values=c('#800000FF','#155F83FF', '#FFA319FF'))+
+  stat_ellipse(aes(linetype=hiv2), geom="polygon", alpha=0, type="t", level=0.8, size=0.5) +
+  xlab("PC1 (15.3%)") + ylab("PC2 (7.9%)") +
+  scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
+
+b1
+
+```
+
+**PERMANOVA**
+
+- will run individual permanovas for each covariable of interest, adjusted for age; for all multivariable comparisons, using 'by = margin' (see discussion in 5/20/23 RMD file)
+
+```{r}
+#Create OTU table
+otu <- as.data.frame(otu_table(chi10k_clr, taxa_are_rows=TRUE))
+
+#Need species in columns and observations in rows: transpose using t() function and save as a dataframe
+  #Source: https://github.com/edamame-course/2015-tutorials/blob/master/final/Ashley_Intro_to_R.md
+otu_trans <- data.frame(t(otu))
+
+#Calculate distance and save as a matrix
+BC.dist=vegdist(otu_trans, method="euclidean")
+
+####
+#HIV
+####
+adonis2(BC.dist ~ hiv, data = chi10kmeta, permutations = 1000)
+  #Significant difference by HIV status: R2 = 0.022, P = 0.042; unchanged
+
+adonis2(BC.dist ~ hiv + age, data = chi10kmeta, permutations = 1000, by = "margin")
+  #results are pretty consistent: HIV: p = 0.044, R2 = 0.023; age: p = 0.07, R2 = 0.12
+
+####
+#Age
+####
+adonis2(BC.dist ~ age, data = chi10kmeta, permutations = 1000)
+  #NO significant difference in overall composition by age (P = 0.09, R2 = 0.012); change from prior
+
+#######
+#Season
+#######
+adonis2(BC.dist ~ season, data = chi10kmeta, permutations = 1000)
+  #Significant difference in overall composition by season remains (P = 0.007, R2 = 0.017)
+
+adonis2(BC.dist ~ season + age, data = chi10kmeta, permutations = 1000, by = "margin")
+#Significant difference by season (P = 0.01, R^2 = 0.017) but not age (P = 0.08, R2 = 0.011) 
+
+#####
+#Wood
+#####
+adonis2(BC.dist ~ wood, data = chi10kmeta, permutations = 1000)
+  #NEW significant difference by wood smoke exposure among children (P = 0.045, R2=0.013)
+
+adonis2(BC.dist ~ wood + age, data = chi10kmeta, permutations = 1000, by = "margin")
+#NEW signif difference by wood smoke exposure (P = 0.045, R2 = 0.013) but NOT age: (P = 0.08, R^2 = 0.012)
+
+####
+#Abx
+####
+adonis2(BC.dist ~ abx, data = chi10kmeta, permutations = 1000)
+  #Trend but no significant difference in overall composition by abx exposure (P = 0.08, R2=0.011); unchanged
+
+adonis2(BC.dist ~ abx + age, data = chi10kmeta, permutations = 1000, by = "margin")
+#No significant difference in overall composition by abx exposure or age
+
+###########
+#Recent URI
+###########
+adonis2(BC.dist ~ uri_rec2, data = chi10kmeta, permutations = 1000)
+#Significant difference in composition among children with recent URI (P = 0.004, R2=0.019); unchanged
+
+adonis2(BC.dist ~ uri_rec2 + age, data = chi10kmeta, permutations = 1000, by = "margin")
+#Significant difference in composition by recent URI sx status (R2 = 0.018, p=0.005) but not age (R2 = 0.11, p = 0.09) 
+
+##############
+#Multivariable
+##############
+#Significant variables from univariable analyses: HIV, season, wood, URI. Age is NO LONGER significantly associated; but given known effect of age on microbiome composition, is it appropriate to leave it out of the multivariable model? Will run both versions and d/w MK.
+
+adonis2(BC.dist ~ hiv + season + wood + uri_rec2, data = chi10kmeta, permutations = 1000, by = "margin")
+#In a multivariable model [age NOT included], HIV status (P=0.04, R2=0.023), season (P=0.006, R2=0.017), and recent URI (P=0.007, R2=0.016) were a/w differences in overall microbiome composition.  Wood smoke exposure was associated in a univariable model but not a mv model (p=0.13, R2=0.010).
+
+adonis2(BC.dist ~ hiv + season + wood + uri_rec2 + age, data = chi10kmeta, permutations = 1000, by = "margin")
+
+#In a multivariable model [age included], HIV status (P=0.03, R2=0.023), season (P=0.008, R2=0.017), and recent URI (P=0.01, R2=0.016) were a/w differences in overall microbiome composition. Age (p=0.08, R2=0.011) and wood smoke exposure (p=0.12, R2=0.010) were not associated.
 ```
 
 
-####EXTRA CODE (can be discarded)
+#### EXTRA CODE (can be discarded)
 ```{r}
 chi_prune = subset_samples(pruned, subject == "child")
 phy.otus <- transform_sample_counts(chi_prune, function(Abundance) Abundance/sum(Abundance))
