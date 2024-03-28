@@ -781,6 +781,207 @@ ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/rarefaction_
 ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/rarefaction_zoomxy.pdf", plot = rarefaction2, dpi = 300, height = 6, width = 11)
 ```
 
+**D/w MK 3/14; need to generate rarefaction curves looking at multiple alpha diversity indices including Shannon and Simpson indices. I don't see a way to do this in ggrare. Found separate code here that I will try: https://github.com/joey711/phyloseq/issues/143 (nr0cinu)
+
+```{r}
+#pull in decontaminated phyloseq that is not pruned:
+meta <- readRDS("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/phy.kaiju.decontam.04192022.rds")
+
+calculate_rarefaction_curves <- function(meta, measures, depths) {
+  require('plyr') # ldply
+  require('reshape2') # melt
+
+  estimate_rarified_richness <- function(meta, measures, depth) {
+    if(max(sample_sums(meta)) < depth) return()
+    meta <- prune_samples(sample_sums(meta) >= depth, meta)
+
+    rarified_meta <- rarefy_even_depth(meta, depth, verbose = FALSE)
+
+    alpha_diversity <- estimate_richness(rarified_meta, measures = measures)
+
+    # as.matrix forces the use of melt.array, which includes the Sample names (rownames)
+    molten_alpha_diversity <- melt(as.matrix(alpha_diversity), varnames = c('Sample', 'Measure'), value.name = 'Alpha_diversity')
+
+    molten_alpha_diversity
+  }
+  
+  names(depths) <- depths # this enables automatic addition of the Depth to the output by ldply
+  rarefaction_curve_data <- ldply(depths, estimate_rarified_richness, meta = meta, measures = measures, .id = 'Depth', .progress = ifelse(interactive(), 'text', 'none'))
+
+  # convert Depth from factor to numeric
+  rarefaction_curve_data$Depth <- as.numeric(levels(rarefaction_curve_data$Depth))[rarefaction_curve_data$Depth]
+
+  rarefaction_curve_data
+}
+
+rarefaction_curve_data <- calculate_rarefaction_curves(meta, c('Observed', 'Shannon', 'Simpson'), rep(c(1, 10, 100, 1000, 1:100 * 10000), each = 10)) #step count here should be 10K if I'm interpreting code correctly 
+summary(rarefaction_curve_data)
+
+rarefaction_curve_data_summary <- ddply(rarefaction_curve_data, c('Depth', 'Sample', 'Measure'), summarise, Alpha_diversity_mean = mean(Alpha_diversity), Alpha_diversity_sd = sd(Alpha_diversity))
+
+#save this dataframe so we don't have to run it again if R crashes
+write.csv(rarefaction_curve_data_summary, '/Users/swetapatel/OneDrive - Duke University/Fogarty coding/q_rare_summary.csv')
+
+rarefaction_curve_data_summary <- read.csv('/Users/swetapatel/OneDrive - Duke University/Fogarty coding/q_rare_summary.csv')
+
+q_rare_facet <- ggplot(
+  data = rarefaction_curve_data_summary,
+  mapping = aes(
+    x = Depth,
+    y = Alpha_diversity_mean,
+    ymin = Alpha_diversity_mean - Alpha_diversity_sd,
+    ymax = Alpha_diversity_mean + Alpha_diversity_sd,
+  )
+) + geom_point(
+# ) + geom_line(
+# ) + geom_pointrange(
+) + facet_wrap(
+  facets = ~ Measure,
+  scales = 'free_y'
+)
+
+#save facet figure, then create separate dataframes for Shannon and Simpson and create zoomed in plots
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/q_rarefaction_facet.pdf", plot = q_rare_facet, dpi = 300, height = 9, width = 11)
+
+rare_shan <- subset(rarefaction_curve_data_summary, rarefaction_curve_data_summary$Measure == "Shannon")
+rare_simp <- subset(rarefaction_curve_data_summary, rarefaction_curve_data_summary$Measure == "Simpson")
+
+#Shannon figures
+q_rare_shan <- ggplot(
+  data = rare_shan,
+  mapping = aes(
+    x = Depth,
+    y = Alpha_diversity_mean,
+    ymin = Alpha_diversity_mean - Alpha_diversity_sd,
+    ymax = Alpha_diversity_mean + Alpha_diversity_sd,
+  )
+) + geom_pointrange() + labs(x="Depth", y = "Shannon index")
+
+p1 <- q_rare_shan + coord_cartesian(xlim = c(0, 500000))
+p2 <- q_rare_shan + coord_cartesian(xlim = c(0, 250000))
+p3 <- q_rare_shan + coord_cartesian(xlim = c(0, 100000))
+p4 <- q_rare_shan + coord_cartesian(xlim = c(0, 50000))
+p5 <- q_rare_shan + coord_cartesian(xlim = c(0, 10000))
+
+q_shan <- plot_grid(q_rare_shan, p2, p4, p5, labels = "AUTO", nrow = 1, ncol = 4, align = "h", axis = "b")
+q_shan
+
+#Simpson figures
+q_rare_simp <- ggplot(
+  data = rare_simp,
+  mapping = aes(
+    x = Depth,
+    y = Alpha_diversity_mean,
+    ymin = Alpha_diversity_mean - Alpha_diversity_sd,
+    ymax = Alpha_diversity_mean + Alpha_diversity_sd,
+  )
+) + geom_pointrange() + labs(x="Depth", y = "Simpson index")
+
+p2 <- q_rare_simp + coord_cartesian(xlim = c(0, 250000))
+p4 <- q_rare_simp + coord_cartesian(xlim = c(0, 50000))
+p5 <- q_rare_simp + coord_cartesian(xlim = c(0, 10000))
+
+q_simp <- plot_grid(q_rare_simp, p2, p4, p5, labels = "AUTO", nrow = 1, ncol = 4, align = "h", axis = "b")
+q_simp
+
+shan_simp <- plot_grid(q_shan, q_simp, labels = "AUTO", nrow = 2, ncol = 1, align = "h", axis = "b")
+shan_simp
+
+#save zoomed shan and simp:
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/q_rarefaction_ss_zoom.pdf", plot = shan_simp, dpi = 300, height = 9, width = 11)
+
+#Per MK 3/14, will focus on panel Ds from our combined shan_simp figure and 1) make points smaller, 2) add lines, and 3) try and create custom ticks on x axis
+q_rare_shan2 <- ggplot(
+  data = rare_shan,
+  mapping = aes(
+    x = Depth,
+    y = Alpha_diversity_mean,
+    ymin = Alpha_diversity_mean - Alpha_diversity_sd,
+    ymax = Alpha_diversity_mean + Alpha_diversity_sd,
+    group = Sample,
+  )
+) + geom_point(size=0.5) + geom_line() + labs(x="Depth", y = "Shannon index") +
+  scale_x_continuous(limits= c(0, 10000), breaks = c(500, 1000, 2500, 5000, 10000))
+
+q_rare_simp2 <- ggplot(
+  data = rare_simp,
+  mapping = aes(
+    x = Depth,
+    y = Alpha_diversity_mean,
+    ymin = Alpha_diversity_mean - Alpha_diversity_sd,
+    ymax = Alpha_diversity_mean + Alpha_diversity_sd,
+    group = Sample,
+  )
+) + geom_point(size=0.5) + geom_line() + labs(x="Depth", y = "Simpson index") +
+  scale_x_continuous(limits= c(0, 10000), breaks = c(500, 1000, 2500, 5000, 10000))
+
+shan_simp2 <- plot_grid(q_rare_shan2, q_rare_simp2, labels = "AUTO", nrow = 1, ncol = 2, align = "h", axis = "b")
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/shan_simp_zoom10K.pdf", plot = shan_simp2, dpi = 300, height = 6, width = 10)
+
+#add color, clean up figures so they are manuscript quality
+
+#need to get rid of moms and color code participants by sib, clwh, heu, huu
+rarefaction_curve_data_summary$subject <- "99"
+rarefaction_curve_data_summary <- mutate(rarefaction_curve_data_summary, subject = case_when(grepl("MOM", Sample) ~ "mom", grepl("CHI", Sample) ~ "child", grepl("SIB", Sample) ~ "sib"))
+
+table(rarefaction_curve_data_summary$subject) #visually reviewed dataframe and looks like it matches up
+
+#Now get rid of the moms 
+rare_kids <- subset(rarefaction_curve_data_summary, rarefaction_curve_data_summary$subject != "mom")
+table(rare_kids$subject) #moms are removed
+
+#Now create a new variable to color code by HIV or sib status
+rare_kids$class <- "99"
+rare_kids <- mutate(rare_kids, class = case_when(grepl("B.*CHI", Sample) ~ "CLWH", grepl("E.", Sample) ~ "HEU children", grepl("U.", Sample) ~ "HUU children", grepl("B.*SIB", Sample) ~ "HEU siblings"))
+rare_kids$class <- as.factor(rare_kids$class)
+rare_kids$class <- reorder(rare_kids$class, new.order=c("CLWH", "HEU children", "HUU children", "HEU siblings"))
+table(rare_kids$class) #All the numbers add up
+
+#Create color palate with 4 colors
+chisp_rare <- c("#800000FF", "#155F83FF", "#FFA319FF", "#8A9045FF")
+show_col(chisp_rare)
+
+rare_shan <- subset(rare_kids, rare_kids$Measure == "Shannon")
+rare_simp <- subset(rare_kids, rare_kids$Measure == "Simpson")
+
+#Shannon panel 
+q_rare_shan2 <- ggplot(
+  data = rare_shan,
+  mapping = aes(x = Depth, y = Alpha_diversity_mean, group = Sample, color = class
+  )
+) + geom_point(size=0.5) + geom_line() + labs(x="Depth", y = "Shannon index") +
+  scale_x_continuous(limits= c(0, 10000))+
+  scale_color_manual(values = chisp_rare) +
+  theme_classic() +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12))
+
+#Simpson panel with legend
+q_rare_simp2 <- ggplot(
+  data = rare_simp,
+  mapping = aes(x = Depth, y = Alpha_diversity_mean, group = Sample, color = class
+  )
+) + geom_point(size=0.5) + geom_line() + labs(x="Depth", y = "Simpson index") +
+  scale_x_continuous(limits= c(0, 10000))+
+  scale_color_manual(values = chisp_rare) +
+  theme_classic() +
+  theme(
+    legend.text = element_text(size = 10),
+    legend.title = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12))
+
+shan_simp2 <- plot_grid(q_rare_shan2, q_rare_simp2, labels = "AUTO", nrow = 1, ncol = 2, align = "h", axis = "b")
+#rel_widths = c(1,1.2)
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/rarefaction_color.pdf", plot = shan_simp2, dpi = 300, height = 5, width = 11)
+```
 
 #### Sensitivity analysis discarding all samples with <10K reads (for LM appeal)
 - will use sample_sums in our pruned object and create a new pseq object that only contains samples with >10K reads (n=  130)
@@ -1660,7 +1861,7 @@ b3
 
 ```
 
-#### Beta diversity: Permanova
+###### Beta diversity: Permanova
 
 ```{r}
 #PERMANOVA: viral load & TMP-SMX
@@ -1671,21 +1872,11 @@ otu_trans <- data.frame(t(otu))
 chi_viral <- data.frame(sample_data(vl_clr))
 BC.dist=vegdist(otu_trans, method="euclidean")
 
-#viral suppression
-adonis(BC.dist ~ vl_suppr, data = chi_viral, permutations = 1000)
-#No significant difference by HIV status among children (P = 0.83)
-  #viral suppression + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
+#viral suppression + age
 adonis2(BC.dist ~ vl_suppr + age, data = chi_viral, permutations = 1000)
-#No significant difference by HIV status among children (P = 0.82) or age (P=0.15)
+#No significant difference by viral suppression status among children (P = 0.89) or age (P=0.20)
 
-#TMPSMX use (n=41)
-adonis(BC.dist ~ tmpsmx, data = chi_viral, permutations = 1000)
-#Trend towards difference in overall composition by tmp-smx use but did not reach signif (P = 0.07, R2 = 0.034)
-  #TMPSMX + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
-adonis(BC.dist ~ tmpsmx + age, data = chi_viral, permutations = 1000)
-#No significant difference by TMPSMX among children (P = 0.07) or age (P=0.22)
-
-#PERMANOVA: CD4 (both continuous and binary), TMPSMX, abx
+#PERMANOVA: CD4, TMPSMX, abx
 otu <- as.data.frame(otu_table(cd4_clr, taxa_are_rows=TRUE))
 #Need species in columns and observations in rows: transpose using t() function and save as a dataframe
 #Source: https://github.com/edamame-course/2015-tutorials/blob/master/final/Ashley_Intro_to_R.md
@@ -1693,36 +1884,233 @@ otu_trans <- data.frame(t(otu))
 chi_cd4 <- data.frame(sample_data(cd4_clr))
 BC.dist=vegdist(otu_trans, method="euclidean")
 
-#CD4 (continuous)
-adonis(BC.dist ~ newest_cd4perc, data = chi_cd4, permutations = 1000)
-#Trend towards difference in overall composition by CD4 percentage but did not reach signif (P = 0.052, R2 = 0.035)
-    #CD4 + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
-adonis(BC.dist ~ newest_cd4perc + age, data = chi_cd4, permutations = 1000)
-#Trend towards difference in overall composition by CD4 percentage but did not reach signif (P = 0.06, R2 = 0.035); age P=0.4
+#CD4 (binary) + age
+adonis2(BC.dist ~ cd4nL + age, data = chi_cd4, permutations = 1000) #P=0.08, R = 0.039 for CD4; age P = 0.21 and R2 = 0.034
 
-#CD4 (binary)
-adonis(BC.dist ~ cd4nL, data = chi_cd4, permutations = 1000)  #P=0.01, R = 0.042
-  #CD4 + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
-adonis2(BC.dist ~ cd4nL + age, data = chi_cd4, permutations = 1000) #P=0.01, R = 0.042 for CD4; age P = 0.20
+#TMPSMX use + age
+adonis2(BC.dist ~ tmpsmx + age, data = chi_cd4, permutations = 1000) #P=0.41, R2=0.030
 
-#TMPSMX use (n=42)  #NOTE: at some point adonis got deprecated so had to switch to adonis2 for updates
-adonis(BC.dist ~ tmpsmx, data = chi_cd4, permutations = 1000) #P=0.12
-    #TMPSMX + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
-adonis2(BC.dist ~ tmpsmx + age, data = chi_cd4, permutations = 1000) #P=0.13, R2=0.031
-
-#abx (n=42) with age
-adonis2(BC.dist ~ abx + age, data = chi_cd4, permutations = 1000) #P=0.19, R2=0.029
-
-#PERMANOVA: TMP-SMX and abx for all children with HIV (n=44)
-otu <- as.data.frame(otu_table(hiv_clr, taxa_are_rows=TRUE))
-otu_trans <- data.frame(t(otu))
-BC.dist=vegdist(otu_trans, method="euclidean")
-  #TMP-SMX
-adonis2(BC.dist ~ tmpsmx + age, data = chi_hiv, permutations = 1000) #P=0.07, R2=0.032
-  #ABX
-adonis2(BC.dist ~ abx + age, data = chi_hiv, permutations = 1000) #P=0.20, R2=0.028
+#abx with age
+adonis2(BC.dist ~ abx + age, data = chi_cd4, permutations = 1000) #P=0.61, R2=0.026
 
 #clean up
 remove(hiv_clr, cd4_clr, vl_clr, otu, otu_trans, clr_cd4, clr_pcoa, clr_tmpsmx, clr_vl)
 remove(BC.dist, lines)
 ```
+
+**Summary: No difference in overall microbiome composition by viral suppression status, TMP-SMX use, or abx exposure among CLWH. The PCoA plot of CD4 classification showed clustering by CD4, but this was not statistically significant by PERMANOVA (P=0.08, R^2^ = 0.039)**
+
+###### Relative abundance plot by CD4 classification
+
+```{r}
+#create a subsetted df of melted_df that only has CLWH
+melt_cd4 <- subset(melted_df, melted_df$hiv == "Infected")
+table(melt_cd4$Species)
+sum(melt_cd4$Abundance) #confirmed n=37
+
+#create our CD4 variables in that dataframe
+melt_cd4$newest_cd4 <- NA
+melt_cd4$newest_cd4 [melt_cd4$chi_cd4_weeks1 < melt_cd4$chi_cd4_weeks2] <- 1
+melt_cd4$newest_cd4 [melt_cd4$chi_cd4_weeks2 < melt_cd4$chi_cd4_weeks1] <- 2
+melt_cd4$newest_cd4 [melt_cd4$chi_cd4_weeks2 < 0] <- 1  #we want to include the cd4 collected BEFORE enrollment where possible
+melt_cd4$newest_cd4 [is.na(melt_cd4$chi_cd4_perc_2)] <- 1    #if we are missing cd4_2, we will use cd4_1
+melt_cd4$newest_cd4 [is.na(melt_cd4$chi_cd4_perc_1)] <- 2    #one child is missing cd4_1 but has cd4_2
+melt_cd4$newest_cd4 [is.na(melt_cd4$chi_cd4_perc_1) & is.na(melt_cd4$chi_cd4_perc_2)] <- NA
+table(melt_cd4$newest_cd4)
+
+#create new dataframe without B-45 and B-52 (aka new df with children missing CD4 data removed)
+melt_cd4 <- subset(melt_cd4, !is.na(newest_cd4))
+#confirm sum
+sum(melt_cd4$Abundance)
+melt_cd4$Var1 <- melt_cd4$chi_cd4_perc_1
+melt_cd4$Var2 <- melt_cd4$chi_cd4_perc_2
+
+melt_cd4 <- melt_cd4 %>% rowwise() %>%
+  mutate(newest_cd4perc = get(paste0('Var', newest_cd4)))
+
+summary(melt_cd4$newest_cd4perc)
+table(melt_cd4$newest_cd4perc)
+
+#make new variable for immune competent CD4 or not, with CD4 percentage >=25% = immune competent
+melt_cd4$cd4nL <- NA
+melt_cd4$cd4nL [melt_cd4$newest_cd4perc >=25] <- "1"
+melt_cd4$cd4nL [melt_cd4$newest_cd4perc < 25] <- "0"
+table(melt_cd4$cd4nL)  #11 kids with CD4% < 25 (when you divide sum by 6709 rows per participant)
+
+#New variable for CD4 cutoff
+melt_cd4$cd4cat <- NA
+melt_cd4$cd4cat [melt_cd4$cd4nL==1] <- "Normal CD4"
+melt_cd4$cd4cat [melt_cd4$cd4nL==0] <- "Low CD4"
+table(melt_cd4$cd4cat)
+class(melt_cd4$cd4cat)
+melt_cd4$cd4cat <- as.factor(melt_cd4$cd4cat)
+melt_cd4$cd4cat <- reorder(melt_cd4$cd4cat, new.order=c("Low CD4", "Normal CD4"))
+```
+
+- Now recreate Figure 1D with the reformatted labels
+```{r}
+b4 <- ggplot(melt_cd4[order(melt_cd4$Species, decreasing = TRUE),], aes(x=cd4cat, y=subject_abundances, fill=Species)) +
+  geom_bar(stat="identity", position="fill") + theme_classic() + 
+  theme(legend.position="right", 
+  legend.text= element_markdown(),
+  axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), 
+  axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + 
+  scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
+  xlab("HIV Status") + ylab("Mean relative abundance")
+
+b4
+
+fig1_10k <- plot_grid(b1, b2, b3, b4, labels = "AUTO", nrow = 2, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1.3))
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig1_10K_subanalysis.pdf", plot = fig1_10k, dpi = 300, height = 9, width = 11)
+
+#save as png too for ease of opening
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig1_10K_subanalysis.png",
+    width = 11, height = 9, units = 'in', res = 600)
+fig1_10k
+dev.off()
+```
+
+Will check our figure against the mean relative abundances of each species
+
+```{r}
+cor_acc <- filter(melt_cd4, Species == "Corynebacterium accolens")
+summary(cor_acc$Abundance)
+tapply(cor_acc$Abundance, cor_acc$cd4cat, mean)
+
+#Corynebacterium propinquum
+cor_p <- filter(melt_cd4, Species == "Corynebacterium propinquum")
+tapply(cor_p$Abundance, cor_p$cd4cat, mean)
+
+#Corynebacterium pseudodiphtheriticum
+cor_ps <- filter(melt_cd4, Species == "Corynebacterium pseudodiphtheriticum")
+tapply(cor_ps$Abundance, cor_ps$cd4cat, mean)
+
+#Dolosigranulum pigrum
+dpig <- filter(melt_cd4, Species == "Dolosigranulum pigrum")
+tapply(dpig$Abundance, dpig$cd4cat, mean)
+
+#Haemophilus influenzae
+hflu <- filter(melt_cd4, Species == "Haemophilus influenzae")
+tapply(hflu$Abundance, hflu$cd4cat, mean)
+
+#Moraxella cattarhalis
+mcat <- filter(melt_cd4, Species == "Moraxella catarrhalis")
+tapply(mcat$Abundance, mcat$cd4cat, mean) 
+
+#Moraxella lincolnii
+mlin <- filter(melt_cd4, Species == "Moraxella lincolnii")
+tapply(mlin$Abundance, mlin$cd4cat, mean) 
+
+#Moraxella nonliquefaciens
+mnon <- filter(melt_cd4, Species == "Moraxella nonliquefaciens")
+tapply(mnon$Abundance, mnon$cd4cat, mean)
+
+#Staphylococcus aureus
+sa <- filter(melt_cd4, Species == "Staphylococcus aureus")
+tapply(sa$Abundance, sa$cd4cat, mean)
+
+#Streptococcus pneumoniae
+spneum <- filter(melt_cd4, Species == "Streptococcus pneumoniae")
+tapply(spneum$Abundance, spneum$cd4cat, mean)
+
+#Other
+oth <- filter(melt_cd4, Species == "Other")
+summary(oth$Abundance)
+aggregate(Abundance ~ Species + cd4cat, data = oth, sum)
+table(chi_cd4$cd4cat)
+#Low CD4: 0.9770166/7 = 0.1395738
+#Normal CD4: 3.6488923/28 = 0.1303176
+```
+
+##### Differential abundance analyses: LefSe
+
+- will filter at 50, remove unidentified species from the otu table, import back into pseq object, and re-run as we did before, using the MicrobiomeMarker package
+
+- microbiomeMarker tutorial: https://github.com/yiluheihei/microbiomeMarker/blob/master/vignettes/microbiomeMarker-vignette.Rmd (under differential analysis section) AND https://yiluheihei.github.io/microbiomeMarker/reference/run_lefse.html
+
+```{r}
+library(microbiomeMarker)
+cd4.filter <- filter_taxa(cd4, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(cd4.filter) #50
+
+otu <- as.data.frame(otu_table(cd4.filter, taxa_are_rows=TRUE))
+#need to remove the unidentified species from here: row 11, 26, 31, 43, 45
+  #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643,  Paenibacillus sp. P22, Clostridiales bacterium KA00274, Prevotellaceae bacterium Marseille-P2826
+otu <- otu[-c(11, 26, 31, 43, 45),]
+
+#Corynebacterium sp. KPL1995 -> Corynebacterium pseudodiphtheriticum
+#Corynebacterium sp. KPL1986 -> Corynebacterium accolens
+#Haemophilus sp. C1 -> Haemophilus haemolyticus
+
+row.names(otu)[3] <- "Haemophilus haemolyticus"
+row.names(otu)[10] <- "Corynebacterium pseudodiphtheriticum"
+row.names(otu)[11] <- "Corynebacterium accolens"
+
+#Kept getting error messages when I tried to import the new OTU table into cd4.filter; ?maybe because otu table and taxtable were now mismatched. So cleared out the relevant rows from the taxtable and then made a new pseq object: cd4.filter2
+  #source: https://github.com/joey711/phyloseq/issues/1018
+bloop <- data.frame(sample_data(cd4.filter))
+taxtable <- as.data.frame(as(tax_table(cd4.filter),"matrix"),stringsAsFactors=FALSE)
+taxtable <- taxtable[-c(11, 26, 31, 43, 45),]
+rownames(taxtable) <- rownames(otu)
+
+otumat = otu_table(as.matrix(otu), taxa_are_rows=T)
+taxmat = tax_table(as.matrix(taxtable))
+bloop <- sample_data(bloop)
+
+cd4.filter2 = phyloseq(otumat, taxmat, bloop)
+#Make sure it worked --> success!
+otu <- as.data.frame(otu_table(cd4.filter2, taxa_are_rows=TRUE))
+bloop <- data.frame(sample_data(cd4.filter2))
+table(bloop$cd4nL)
+
+#Now we can run lefse on our filtered object
+cd4lefse.f <- run_lefse(
+  cd4.filter2,
+  group = "cd4nL",
+  subgroup = NULL,
+  taxa_rank = "all",
+  kw_cutoff = 0.01,
+  wilcoxon_cutoff = 0.01,
+  multigrp_strat = FALSE,
+  lda_cutoff = 2
+)
+
+#Keep getting the following error: "Error in sig_otus[, wilcoxon_p] : incorrect number of dimensions." Re-created the phyloseq object and confirmed otus and taxtable matched.
+  #what if we run lefse with our filtered CD4 pseq object without unidentified species removed? Get same error message. But if we run on our unfiltered CD4 object, it works
+
+cd4lefse.f <- run_lefse(
+  cd4.filter,
+  wilcoxon_cutoff = 0.01,
+  group = "cd4nL",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+test <- run_lefse(
+  cd4,
+  wilcoxon_cutoff = 0.01,
+  group = "cd4nL",
+  kw_cutoff = 0.01,
+  multigrp_strat = TRUE,
+  taxa_rank = "Species",
+  lda_cutoff = 2
+)
+
+test
+head(marker_table(test))
+
+test.f <- as.data.frame(as(marker_table(test),"matrix"),stringsAsFactors=FALSE)
+
+#reviewed lefse tutorial and changed taxa_rank from "Species" to 'all' for our cd4lefse.f using cd4.filter2 and got results: N. lactamica is differentially abundant and is more abundant in children with normal CD4. This is the OPPOSITE of what we previously found (N. lactamica was more abundant in CLWH with low CD4)
+cd4lefse.f
+head(marker_table(cd4lefse.f))
+
+cd4lefse.f <- as.data.frame(as(marker_table(cd4lefse.f),"matrix"),stringsAsFactors=FALSE)
+write.csv(cd4lefse.f, '/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/mm_lefse_cd4_filt_10K.csv')
+```
+
+- results of this LefSe analysis are contradictory to our prior results: N. lactamica was more abundant in children with normal CD4. This is the OPPOSITE of what we previously found (N. lactamica was more abundant in CLWH with low CD4)
