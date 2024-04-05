@@ -983,6 +983,129 @@ shan_simp2 <- plot_grid(q_rare_shan2, q_rare_simp2, labels = "AUTO", nrow = 1, n
 ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/rarefaction_color.pdf", plot = shan_simp2, dpi = 300, height = 5, width = 11)
 ```
 
+**Update 4-2-24: Need to redo the rarefaction curves with the following changes:**
+
+```{r}
+#already pulled in our unpruned decontaminated dataframe (meta)
+
+calculate_rarefaction_curves <- function(meta, measures, depths) {
+  require('plyr') # ldply
+  require('reshape2') # melt
+
+  estimate_rarified_richness <- function(meta, measures, depth) {
+    if(max(sample_sums(meta)) < depth) return()
+    meta <- prune_samples(sample_sums(meta) >= depth, meta)
+
+    rarified_meta <- rarefy_even_depth(meta, depth, verbose = FALSE)
+
+    alpha_diversity <- estimate_richness(rarified_meta, measures = measures)
+
+    # as.matrix forces the use of melt.array, which includes the Sample names (rownames)
+    molten_alpha_diversity <- melt(as.matrix(alpha_diversity), varnames = c('Sample', 'Measure'), value.name = 'Alpha_diversity')
+
+    molten_alpha_diversity
+  }
+  
+  names(depths) <- depths # this enables automatic addition of the Depth to the output by ldply
+  rarefaction_curve_data <- ldply(depths, estimate_rarified_richness, meta = meta, measures = measures, .id = 'Depth', .progress = ifelse(interactive(), 'text', 'none'))
+
+  # convert Depth from factor to numeric
+  rarefaction_curve_data$Depth <- as.numeric(levels(rarefaction_curve_data$Depth))[rarefaction_curve_data$Depth]
+
+  rarefaction_curve_data
+}
+
+rarefaction_curve_data <- calculate_rarefaction_curves(meta, c('Observed', 'Shannon', 'Simpson'), rep(c(1, 10, 100, 1000, 2500, 1:100 * 5000), each = 10)) #step count here should be 5K if I'm interpreting code correctly; dropped from original run and added a point at 2500
+summary(rarefaction_curve_data)
+
+rarefaction_curve_data_summary <- ddply(rarefaction_curve_data, c('Depth', 'Sample', 'Measure'), summarise, Alpha_diversity_mean = mean(Alpha_diversity), Alpha_diversity_sd = sd(Alpha_diversity))
+
+#save this dataframe so we don't have to run it again if R crashes
+write.csv(rarefaction_curve_data_summary, '/Users/swetapatel/OneDrive - Duke University/Fogarty coding/q_rare_summary_V2.csv')
+
+# rarefaction_curve_data_summary <- read.csv('/Users/swetapatel/OneDrive - Duke University/Fogarty coding/q_rare_summary_V2.csv')
+
+q_rare_facet <- ggplot(
+  data = rarefaction_curve_data_summary,
+  mapping = aes(
+    x = Depth,
+    y = Alpha_diversity_mean,
+    ymin = Alpha_diversity_mean - Alpha_diversity_sd,
+    ymax = Alpha_diversity_mean + Alpha_diversity_sd,
+  )
+) + geom_point(
+# ) + geom_line(
+# ) + geom_pointrange(
+) + facet_wrap(
+  facets = ~ Measure,
+  scales = 'free_y'
+)
+
+#next: variable to distinguish moms, sibs, kids so we can create a curve without the moms
+rarefaction_curve_data_summary$subject <- "99"
+rarefaction_curve_data_summary <- mutate(rarefaction_curve_data_summary, subject = case_when(grepl("MOM", Sample) ~ "mom", grepl("CHI", Sample) ~ "child", grepl("SIB", Sample) ~ "sib"))
+
+table(rarefaction_curve_data_summary$subject) #visually reviewed dataframe and looks like it matches up
+
+#Now remove mom data from dataframe
+rare_kids <- subset(rarefaction_curve_data_summary, rarefaction_curve_data_summary$subject != "mom")
+table(rare_kids$subject) #moms are removed
+
+rare_shan <- subset(rare_kids, rare_kids$Measure == "Shannon")
+rare_simp <- subset(rare_kids, rare_kids$Measure == "Simpson")
+
+#Shannon panel 
+q_rare_shan3 <- ggplot(
+  data = rare_shan,
+  mapping = aes(x = Depth, y = Alpha_diversity_mean, group = Sample, color = Measure
+  )
+) + geom_point(size=0.8) + geom_line(size=0.35) + labs(x="Depth", y = "Shannon index") +
+  scale_x_continuous(limits= c(0, 5000), breaks = c(0, 1000, 2500, 5000))+
+  scale_y_continuous(limits= c(0, 6))+
+  scale_color_manual(values = c("#4D004B")) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.text = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12))
+
+#Simpson panel with legend
+q_rare_simp3 <- ggplot(
+  data = rare_simp,
+  mapping = aes(x = Depth, y = Alpha_diversity_mean, group = Sample, color = Measure
+  )
+) + geom_point(size=0.8) + geom_line(size=0.35) + labs(x="Depth", y = "Simpson index") +
+  scale_x_continuous(limits= c(0, 5000), breaks = c(0, 1000, 2500, 5000))+
+  # scale_y_continuous(limits= c(0, 6))+
+  scale_color_manual(values = c("#4D004B")) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.text = element_text(size = 10),
+    axis.title.y = element_text(size = 12),
+    axis.title.x = element_text(size = 12))
+
+shan_simp3 <- plot_grid(q_rare_shan3, q_rare_simp3, labels = "AUTO", nrow = 1, ncol = 2, align = "h", axis = "b")
+#rel_widths = c(1,1.2)
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/rarefaction_revised040224.pdf", plot = shan_simp3, dpi = 300, height = 5, width = 11)
+
+```
+
+
+#### Comparison of our sequencing depth to other projects using NP microbiome data
+
+- MK downloaded the sequences for the following project: The Human Virome In Children And Its Relationship To Febrile Illness (PRJNA46335), which utilized data from the Human Microbiome Project (HMP)
+
+- shared kneaddata counts with me as csv file, which I will import. Can get median (IQR) # reads from the final pair 1 column
+
+```{r}
+hmp <- read_xlsx("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/HMP_NP_PRJNA46335_kneaddata_counts.xlsx")
+summary(hmp$`final pair1`) #Median (IQR) 14,103 (6130, 44218)
+
+```
+
 #### Sensitivity analysis discarding all samples with <10K reads (for LM appeal)
 - will use sample_sums in our pruned object and create a new pseq object that only contains samples with >10K reads (n=  130)
 
