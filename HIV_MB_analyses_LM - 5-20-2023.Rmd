@@ -480,12 +480,22 @@ t.test(Shannon ~ uri_rec2, data = div_child) #p=0.31
 summary(div_hh <- lm(Shannon ~ hhsize, data = div_child)) #p=0.47
 
 #MULTIVARIABLE MODEL
-#Need to set reference for HIV variable
+#Need to set reference for HIV variable and other categorical variables
 class(div_child$hiv) #character; need to make factor to relevel
 div_child$hiv <- as.factor(div_child$hiv)
 div_child$hiv <- relevel(div_child$hiv, ref = "Unexposed")
+#wood
+div_child$wood <- as.factor(div_child$wood)
+div_child$wood <- relevel(div_child$wood, ref = "0")
+#season
+div_child$season <- as.factor(div_child$season)
+div_child$season <- relevel(div_child$season, ref = "Dry")
+
 summary(div_mv <- lm(Shannon ~ age + hiv + wood + season + abx + uri_rec2, data = div_child))
-summary(div_mv <- lm(Shannon ~ age + hiv + wood + season + abx + uri_rec2 + hhsize, data = div_child))
+# summary(div_mv <- lm(Shannon ~ age + hiv + wood + season + abx + uri_rec2 + hhsize, data = div_child))
+
+#LM editor comments 4/2024: asked if output of linear regression models available so we will add. ideally can present estimate, 95% CI, and p value but will confirm with MK.
+confint(div_mv)
 ```
 
 #### Chao1
@@ -554,8 +564,10 @@ class(div_child$hiv) #character; need to make factor to relevel
 div_child$hiv <- as.factor(div_child$hiv)
 div_child$hiv <- relevel(div_child$hiv, ref = "Unexposed")
 summary(div_mv <- lm(Chao1_log ~ age + hiv + wood + season + abx + uri_rec2, data = div_child))
-summary(div_mv <- lm(Chao1_log ~ age + hiv + wood + season + abx + uri_cur2, data = div_child))
-summary(div_mv <- lm(Chao1_log ~ age + hiv + wood + season + abx + uri_rec2 + hhsize, data = div_child))
+# summary(div_mv <- lm(Chao1_log ~ age + hiv + wood + season + abx + uri_rec2 + hhsize, data = div_child))
+
+#LM editor comments 4/2024: asked if output of linear regression models available so we will add. ideally can present estimate, 95% CI, and p value but will confirm with MK.
+confint(div_mv)
 ```
 
 #### Alpha diversity boxplots
@@ -843,7 +855,10 @@ fit_data2 = Maaslin2(
   reference = c("hiv,Exposed Uninfected"))
 ```
 
-#### MaAsLin2 barplot (previously figure 3, now figure 2 in manuscript)
+#### MaAsLin2 barplot
+**UPDATE 4/2024: need to add labels to x-axes; as we had to add the enrollment figure as fig 1, pcoa/rel abund plots as fig 2, unsupervised clustering as fig 3, our maaslin fig is now fig 4**
+- using huttenhower tutorial, confirmed that our x axis label should be "effect size" (https://huttenhower.sph.harvard.edu/maaslin/)
+
 ```{r}
 #UPDATE AUG 3: use Maaslin2 results to create barplot
 maaslin <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/maaslin_mv_kaiju_filt50_v4/significant_results.tsv", sep = "\t")
@@ -893,7 +908,9 @@ m_s <- ggplot(m_seas, aes(x=coef, y=Species, fill=posneg)) +
     # legend.title = element_blank(),
     axis.text = element_text(size = 10),
     axis.text.y = element_text(face = "italic"),
-    axis.title = element_blank()) +
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_blank()) +
+  xlab("Relative effect size") +
   geom_errorbar(aes(xmin=coef-stderr, xmax=coef+stderr), width=.2) 
 
 #age
@@ -912,7 +929,9 @@ m_a <- ggplot(m_age, aes(x=coef, y=Species, fill=posneg)) +
     # legend.title = element_blank(),
     axis.text = element_text(size = 10),
     axis.text.y = element_text(face = "italic"),
-    axis.title = element_blank()) +
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_blank()) +
+  xlab("Relative effect size") +
   geom_errorbar(aes(xmin=coef-stderr, xmax=coef+stderr), width=.2) 
 
 #recent URI
@@ -979,7 +998,7 @@ fig3 <- plot_grid(m_s, right,
                   rel_heights = c(1, 1.2))
                   # align = "v", axis = "b")
 
-ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig2NEW(maaslin)_V2b.pdf", plot = fig3, dpi = 300, width = 12, height = 5)
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4NEW(maaslin)_May2024.pdf", plot = fig3, dpi = 300, width = 12, height = 5)
 ```
 
 ### K-medioid clustering
@@ -1176,6 +1195,8 @@ sampleDF = sample_data(chi.spec) %>%
 
 #save sampleDF as a csv file in case we need to return to it
 write.csv(sampleDF, '/Users/swetapatel/OneDrive - Duke University/Fogarty coding/metadata_clust.csv')
+
+sampleDF <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/metadata_clust.csv")
 
 #To get PC% for axes for above figure:
 #Create new PCoA with clusters as variable, using euclidean distances generated from CLR transforming chi.spec
