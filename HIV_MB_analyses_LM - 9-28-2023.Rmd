@@ -495,6 +495,7 @@ dev.off()
 ```
 
 Make sure the figures correspond to the relative abundances
+(5/2024: added paired wilcoxon testing to update significant p values in manuscript per editor request)
 
 ```{r}
 #Corynebacterium accolens
@@ -504,14 +505,17 @@ tapply(cor_acc$Abundance, cor_acc$subject2, mean)
 #Corynebacterium propinquum
 cor_p <- filter(melt_sib, Species == "Corynebacterium propinquum")
 tapply(cor_p$Abundance, cor_p$subject2, mean)
+wilcox.test(Abundance ~ subject, data=cor_p, paired=TRUE)
 
 #Corynebacterium pseudodiphtheriticum
 cor_ps <- filter(melt_sib, Species == "Corynebacterium pseudodiphtheriticum")
 tapply(cor_ps$Abundance, cor_ps$subject2, mean)
+wilcox.test(Abundance ~ subject, data=cor_ps, paired=TRUE)
 
 #Dolosigranulum pigrum
 dpig <- filter(melt_sib, Species == "Dolosigranulum pigrum")
 tapply(dpig$Abundance, dpig$subject2, mean)
+wilcox.test(Abundance ~ subject, data=dpig, paired=TRUE)
 
 #Haemophilus influenzae
 hflu <- filter(melt_sib, Species == "Haemophilus influenzae")
@@ -524,6 +528,7 @@ tapply(mcat$Abundance, mcat$subject2, mean)
 #Moraxella lincolnii
 mlin <- filter(melt_sib, Species == "Moraxella lincolnii")
 tapply(mlin$Abundance, mlin$subject2, mean) 
+wilcox.test(Abundance ~ subject, data=mlin, paired=TRUE)
 
 #Moraxella nonliquefaciens
 mnon <- filter(melt_sib, Species == "Moraxella nonliquefaciens")
@@ -536,6 +541,7 @@ tapply(sa$Abundance, sa$subject2, mean)
 #Streptococcus pneumoniae
 spneum <- filter(melt_sib, Species == "Streptococcus pneumoniae")
 tapply(spneum$Abundance, spneum$subject2, mean)
+wilcox.test(Abundance ~ subject, data=spneum, paired=TRUE)
 
 #Other
 oth <- filter(melt_sib, Species == "Other") #120582/6709 = 17.97

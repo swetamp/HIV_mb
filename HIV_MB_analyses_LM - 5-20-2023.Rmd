@@ -49,6 +49,7 @@ library(cluster)
 library(devtools)
 library(SpiecEasi)
 library(pairwiseAdonis)
+library(zscorer)
 ```
 
 ```{r include=FALSE}
@@ -2677,6 +2678,17 @@ SparccP_plot2e <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom
 
 ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4SparCC_V3.pdf", plot = SparccP_plot2e, dpi = 300, width = 10, height = 7)
 
+#UPDATE 5-20-2024: From LM Editor: would like us to add the correlation value for the darkest orange in our legend. We submitted an annotated version of Fig4SparCC_V2 with our revised manuscript, so will re-run the entire SpiecEasi set of code (not copied) and re-do the figure (code copied below) with legend modified. Then we will check it against our Fig4SparCC_V2 as the ONLY difference between the 2 figures should be the legend. 
+
+SparccP_plot2d <- SparccPcsv %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() +
+  scale_fill_gradientn(
+  colors = c("#800000FF", "white", "#4D004B"), limits = c(-1, 1)) + scale_x_discrete(limits=rev, position = "top") + scale_y_discrete(limits=rev, position = "right") + theme(
+   axis.text.x = element_markdown(angle = 45, hjust = 0, face = "italic"),
+  axis.text.y = element_markdown(face = "italic"),
+  axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4SparCC_V2.pdf", plot = SparccP_plot2d, dpi = 300, width = 10, height = 7)
+
 ```
 
 ### Differential abundance plots 
@@ -3506,7 +3518,7 @@ adonis(BC.dist ~ newest_cd4perc + age, data = chi_cd4, permutations = 1000)
 #CD4 (binary)
 adonis(BC.dist ~ cd4nL, data = chi_cd4, permutations = 1000)  #P=0.01, R = 0.042
   #CD4 + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
-adonis2(BC.dist ~ cd4nL + age, data = chi_cd4, permutations = 1000) #P=0.01, R = 0.042 for CD4; age P = 0.20
+adonis2(BC.dist ~ cd4nL + age, data = chi_cd4, permutations = 1000) #P=0.013, R = 0.042 for CD4; age P = 0.20
 
 #TMPSMX use (n=42)  #NOTE: at some point adonis got deprecated so had to switch to adonis2 for updates
 adonis(BC.dist ~ tmpsmx, data = chi_cd4, permutations = 1000) #P=0.12
@@ -3879,7 +3891,7 @@ BC.dist=vegdist(otu_trans, method="euclidean")
 
 #hiv + age (per 6/9 MK discussion to account for age in all PERMANOVAs)
 adonis2(BC.dist ~ hiv + age, data = hlow, permutations = 1000)
-#Significant difference by HIV status among children (P = 0.003, R2 = 0.032) and age (P=0.03, R2 = 0.015)
+#Significant difference by HIV status among children (P = 0.002997, R2 = 0.032) and age (P=0.03, R2 = 0.015)
 #check with age first given issues with order of variables in adonis; not signif different
 adonis2(BC.dist ~ age + hiv, data = hlow, permutations = 1000)
 
@@ -4458,3 +4470,41 @@ dev.off()
 
 ```
 
+### Colonization prevalence of S. pneumo and S. aureus
+
+- using melted_df and code from 10-6-22 Kaiju file
+
+```{r}
+#Staph aureus 
+sa <- filter(melted_df, Species == "Staphylococcus aureus")
+hist(sa$Abundance)  #lots of zeros
+summary(sa$Abundance)
+tapply(sa$Abundance, sa$hiv, summary) #limited by zeros (all medians = 0)
+kruskal.test(sa$Abundance, sa$hiv)  #P=0.049; borderline to no difference in relative abundances by HIV status
+
+#what about differences in presence/absence of S. aureus?
+sa$present <- NA
+sa$present [sa$Abundance == 0] <- 0
+sa$present [sa$Abundance > 0] <- 1
+table(sa$present)
+table(sa$present, sa$hiv)
+prop.table(table(sa$present, sa$hiv), 2)
+summary(table(sa$present, sa$hiv)) #there is a significant difference by HIV status (p=0.027)
+
+#Streptococcus pneumoniae
+spneum <- filter(melted_df, Species == "Streptococcus pneumoniae")
+hist(spneum$Abundance)  #lots of zeros
+summary(spneum$Abundance)
+tapply(spneum$Abundance, spneum$hiv, summary)
+kruskal.test(spneum$Abundance, spneum$hiv)  #P=0.55
+
+spneum$present <- NA
+spneum$present [spneum$Abundance == 0] <- 0
+spneum$present [spneum$Abundance > 0] <- 1
+table(spneum$present)
+table(spneum$present, spneum$hiv)
+prop.table(table(spneum$present, spneum$hiv), 2)
+summary(table(spneum$present, spneum$hiv))  #Trend towards higher %HEU kids with S.pneumo col (96% vs 82% in HIV+ and 86% in HUU) but not signif; p=0.094
+
+
+```
