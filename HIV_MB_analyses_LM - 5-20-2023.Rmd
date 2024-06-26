@@ -2742,12 +2742,21 @@ data.frame(outP$cors, outP$pvals) %>% head
 
 cors <- outP$cors
 pvals <- outP$pvals
-sparCCpcors <- diag(1, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
-sparCCpcors <- cors
-sparCCpcors <- sparCCpcors + t(sparCCpcors)
 
-sparCCpval <- diag(1, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
-sparCCpval <- pvals
+# sparCCpcors <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
+# sparCCpcors[upper.tri(sparCCpcors, diag=FALSE)] <- cors
+# sparCCpcors <- sparCCpcors + t(sparCCpcors)
+# 
+# sparCCpval <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
+# sparCCpval[upper.tri(sparCCpval, diag=FALSE)] <- pvals
+# sparCCpval <- sparCCpval + t(sparCCpval)
+
+sparCCpcors <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1]) #gives a 38 x 38 matrix
+sparCCpcors[upper.tri(sparCCpcors, diag=FALSE)] <- cors
+sparCCpcors <- sparCCpcors + t(sparCCpcors) 
+
+sparCCpval <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1]) #38 x 38 matrix
+sparCCpval [upper.tri(sparCCpval, diag=FALSE)] <- pvals 
 sparCCpval <- sparCCpval + t(sparCCpval)
 
 rownames(sparCCpcors) <- colnames(totu)
@@ -2760,44 +2769,86 @@ sparCCpval[1:5, 1:5]
 
 #now need to process and account for false discovery rates 
 #add helper function first
-reorder_cor_and_p <- function(cormat, pmat){
-  dd <- as.dist((1-cormat)/2)
-  hc <- hclust(dd)
-  cormat <-cormat[hc$order, hc$order]
-  pmat <- pmat[hc$order, hc$order]
-  list(r = cormat, p = pmat)
-}
-
-reordered_all_sparcc <- reorder_cor_and_p(sparCCpcors, sparCCpval)
-reordered_sparccCor <- reordered_all_sparcc$r
-reordered_sparccP<- reordered_all_sparcc$p
-
-sparccCor_processed <- reordered_sparccCor  %>% get_upper_tri() %>% reshape2::melt() %>% na.omit() %>% rename(cor = value)
-sparccP_processed <- reordered_sparccP  %>% get_upper_tri() %>% reshape2::melt() %>% na.omit() %>% rename(p = value)
+# reorder_cor_and_p <- function(cormat, pmat){
+#   dd <- as.dist((1-cormat)/2)
+#   hc <- hclust(dd)
+#   cormat <-cormat[hc$order, hc$order]
+#   pmat <- pmat[hc$order, hc$order]
+#   list(r = cormat, p = pmat)
+# }
+# 
+# reordered_all_sparcc <- reorder_cor_and_p(sparCCpcors, sparCCpval)
+# reordered_sparccCor <- reordered_all_sparcc$r
+# reordered_sparccP<- reordered_all_sparcc$p
+# 
+sparccCor_processed <- sparCCpcors %>%  reshape2::melt() %>% na.omit() %>% rename(cor = value)
+sparccP_processed <- sparCCpval %>% reshape2::melt() %>% na.omit() %>% rename(p = value)
 
 # join the two data frames
 
 SparccP <- left_join(sparccCor_processed, sparccP_processed, by = c("Var1", "Var2")) %>%
-  # # remove self correlations
-  # filter(Var1 != Var2) %>% 
-  # calculate the false discovery rate to adjust for multiple p values
   mutate(fdr = p.adjust(p, method = "BH"))
+
+# SparccP <- left_join(sparccCor_processed, sparccP_processed, by = c("Var1", "Var2")) %>%
+#   # # remove self correlations
+#   # filter(Var1 != Var2) %>% 
+#   # calculate the false discovery rate to adjust for multiple p values
+#   mutate(fdr = p.adjust(p, method = "BH"))
 
 #what is our false discovery rate threshold? for Maaslin2, we used a q value of 0.2; here, will use 0.1.
 fdrThresh2 <- 0.1 # fdr threshold
 
 sparccOkP2 <- SparccP%>% filter(fdr < fdrThresh2) 
 
-SparccP_plot2c <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() + scale_fill_gradient2(low = "#800000FF", mid = "white", high = "#4D004B", midpoint = 0) + scale_x_discrete(position = "bottom", limits=rev) + theme(
-  axis.text.x = element_markdown(angle = 45, hjust = 1, face = "italic"),
+SparccP_plot2g <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() +
+  scale_fill_gradientn(
+  colors = c("#800000FF", "white", "#4D004B"), limits = c(-1, 1)) + scale_x_discrete(limits=rev, position = "top") + scale_y_discrete(limits=rev, position = "right") + theme(
+  axis.text.x = element_markdown(angle = 45, hjust = 0, face = "italic"),
   axis.text.y = element_markdown(face = "italic"),
+  legend.title = element_text(size = 9),
+  legend.text.align = 1,
   axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
 
-
-png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparccP2c.png",
+png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparcc_fullV1.png",
     width = 12, height = 9, units = 'in', res = 600)
-SparccP_plot2c
+SparccP_plot2g
 dev.off()
+
+#we have a full heat map! But now we need to organize alphabetically
+class(SparccP$Var1) #factors
+class(SparccP$Var2)
+
+SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile()  +  scale_fill_gradientn(
+  colors = c("#800000FF", "white", "#4D004B"), limits = c(-1, 1)) + ylim(levels(SparccP$Var1)) + xlim(levels(SparccP$Var1)) + theme(
+  axis.text.x = element_markdown(angle = 45, hjust = 0, face = "italic"),
+  axis.text.y = element_markdown(face = "italic"),
+  legend.title = element_text(size = 9),
+  legend.text.align = 1,
+  axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
+
+#no combination of xlim/ylim or scale_x_discrete/scale_y_discrete is working to re-order the variables; we will save our new SparccP output that gives us a full heat map as a csv file, then open that csv file and attempt an alphabetical heat map that way:
+write.csv(SparccP, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCCfull_June2024.csv")
+SparccPcsv <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCCfull_June2024.csv")
+
+class(SparccPcsv$Var1)
+
+fdrThresh2 <- 0.1 # fdr threshold
+sparccOkP2 <- SparccPcsv%>% filter(fdr < fdrThresh2) 
+
+SparccP_plot2h <- SparccPcsv %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() +
+  scale_fill_gradientn(
+  colors = c("#800000FF", "white", "#4D004B"), limits = c(-1, 1)) + scale_x_discrete(limits=rev, position = "top") + scale_y_discrete(limits=rev, position = "right") + theme(
+  axis.text.x = element_markdown(angle = 45, hjust = 0, face = "italic"),
+  axis.text.y = element_markdown(face = "italic"),
+  legend.title = element_text(size = 9),
+  legend.text.align = 1,
+  axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
+
+###IT WORKED
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4SparCC_June24_FULL.pdf", plot = SparccP_plot2h, dpi = 300, width = 10, height = 7)
+
+#Now we will re-generate our network diagram in Cytoscape using the newest csv file for continuity.
 
 ```
 
