@@ -50,6 +50,7 @@ library(devtools)
 library(SpiecEasi)
 library(pairwiseAdonis)
 library(zscorer)
+library(ggtext)
 ```
 
 ```{r include=FALSE}
@@ -2697,6 +2698,12 @@ ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4SparCC_J
 
 #UPDATE 6-19-2024: will try running sparcc again without the cormat function to see if we can generate a heatmap that covers the whole grid, not just half
 
+#UPDATE 6-25-2024: the output of sparcc should not change from run to run if we are setting our seed; but we may need to set the seed right before we run the sparcc and pvalue bootstrapping commands, so we will do that and generate the dataframe we use to create our heat map twice, so we can ensure reproducibility
+#This worked! The SparccP dataframe generated at the end yielded the same results when we set the seed before the sparcc command and again before bootstrapping the p values
+#NEXT: re-run our ORIGINAL code to generate half the heatmap, make sure the values correlate, and then export this to Cytoscape to regenerate our co-occurrence diagram. UPDATE: we needed to add another set.seed function before the fdr variable was created, so both versions of sparcc regenerated
+
+pruned <- readRDS("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/phy.pruned05092022.rds")
+chi_prune = subset_samples(pruned, subject == "child")
 chi.filter <- filter_taxa(chi_prune, function(Abundance) mean(Abundance)>=50, TRUE)
 ntaxa(chi.filter) #43
 otu <- as.data.frame(otu_table(chi.filter, taxa_are_rows=TRUE))
@@ -2711,6 +2718,7 @@ row.names(otu)[10] <- "Corynebacterium pseudodiphtheriticum"
 row.names(otu)[11] <- "Corynebacterium accolens"
 
 totu <- t(otu)
+set.seed(1234)
 sparcc.chi1 <- sparcc(totu)
 
 sparcc.chi1$Cor[1:5, 1:5]
@@ -2729,6 +2737,8 @@ Sparcc_plot2
 
 #calculate sparcc p values
 #first have to boostrap the sparccc value
+#set seed AGAIN
+set.seed(1234)
 tp0 <- proc.time()
 out2 <- sparccboot(totu, R = 1000)
 tp1 <- proc.time()
@@ -2742,14 +2752,6 @@ data.frame(outP$cors, outP$pvals) %>% head
 
 cors <- outP$cors
 pvals <- outP$pvals
-
-# sparCCpcors <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
-# sparCCpcors[upper.tri(sparCCpcors, diag=FALSE)] <- cors
-# sparCCpcors <- sparCCpcors + t(sparCCpcors)
-# 
-# sparCCpval <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
-# sparCCpval[upper.tri(sparCCpval, diag=FALSE)] <- pvals
-# sparCCpval <- sparCCpval + t(sparCCpval)
 
 sparCCpcors <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1]) #gives a 38 x 38 matrix
 sparCCpcors[upper.tri(sparCCpcors, diag=FALSE)] <- cors
@@ -2768,24 +2770,11 @@ sparCCpcors[1:5, 1:5]
 sparCCpval[1:5, 1:5]
 
 #now need to process and account for false discovery rates 
-#add helper function first
-# reorder_cor_and_p <- function(cormat, pmat){
-#   dd <- as.dist((1-cormat)/2)
-#   hc <- hclust(dd)
-#   cormat <-cormat[hc$order, hc$order]
-#   pmat <- pmat[hc$order, hc$order]
-#   list(r = cormat, p = pmat)
-# }
-# 
-# reordered_all_sparcc <- reorder_cor_and_p(sparCCpcors, sparCCpval)
-# reordered_sparccCor <- reordered_all_sparcc$r
-# reordered_sparccP<- reordered_all_sparcc$p
-# 
 sparccCor_processed <- sparCCpcors %>%  reshape2::melt() %>% na.omit() %>% rename(cor = value)
 sparccP_processed <- sparCCpval %>% reshape2::melt() %>% na.omit() %>% rename(p = value)
 
 # join the two data frames
-
+set.seed(1234)
 SparccP <- left_join(sparccCor_processed, sparccP_processed, by = c("Var1", "Var2")) %>%
   mutate(fdr = p.adjust(p, method = "BH"))
 
@@ -2800,7 +2789,12 @@ fdrThresh2 <- 0.1 # fdr threshold
 
 sparccOkP2 <- SparccP%>% filter(fdr < fdrThresh2) 
 
-SparccP_plot2g <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() +
+#If we turn var1 and var2 from factors into characters, ggplot will put them in alphabetical order based on our code: 
+
+SparccP$Var1 <- as.character(SparccP$Var1)
+SparccP$Var2 <- as.character(SparccP$Var2)
+
+SparccP_plot2h_v2 <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom_tile() +
   scale_fill_gradientn(
   colors = c("#800000FF", "white", "#4D004B"), limits = c(-1, 1)) + scale_x_discrete(limits=rev, position = "top") + scale_y_discrete(limits=rev, position = "right") + theme(
   axis.text.x = element_markdown(angle = 45, hjust = 0, face = "italic"),
@@ -2808,6 +2802,118 @@ SparccP_plot2g <- SparccP %>% ggplot(aes(x = Var2, y = Var1, fill = cor)) + geom
   legend.title = element_text(size = 9),
   legend.text.align = 1,
   axis.title = element_blank()) + geom_point(data = sparccOkP2, shape = 8, size = 0.5) + labs(fill = "Correlation")
+
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4SparCC_June24_FULL_setseedV3.pdf", plot = SparccP_plot2h_v2, dpi = 300, width = 10, height = 7)
+
+#comparing our second SparccP dataframe to a screenshot of the first, they are identical. To compare our full SparccP to the half one we are going to generate to re-do our co-occurrence plot, will save the full SparccP as a csv
+write.csv(SparccP, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCC_June2024_setseed_fullV2.csv")
+
+#NEXT: re-run our ORIGINAL code to generate half the heatmap, make sure the values correlate with the full heatmap since we used the same set.seed, and then export this to Cytoscape to regenerate our co-occurrence diagram (after clearing our environment to reset from the last full SparCC run)
+
+chi.filter <- filter_taxa(chi_prune, function(Abundance) mean(Abundance)>=50, TRUE)
+ntaxa(chi.filter) #43
+otu <- as.data.frame(otu_table(chi.filter, taxa_are_rows=TRUE))
+#need to remove the unidentified species from here: row 11, 25, 37, 38, 40
+  #source: https://stackoverflow.com/questions/12328056/how-do-i-delete-rows-in-a-data-frame
+#corresponding respectively to: Corynebacterium sp. KPL1859, Streptococcus sp. SK643, Alkalibacterium sp. 20, uncultured Clostridium sp., Nocardioides sp. Root122
+otu <- otu[-c(11, 25, 37, 38, 40),]
+
+#clean up otu table
+row.names(otu)[3] <- "Haemophilus haemolyticus"
+row.names(otu)[10] <- "Corynebacterium pseudodiphtheriticum"
+row.names(otu)[11] <- "Corynebacterium accolens"
+
+totu <- t(otu)
+set.seed(1234)
+sparcc.chi1 <- sparcc(totu)
+
+sparcc.chi1$Cor[1:5, 1:5]
+#threw away names; will add back from otu dataframe
+rownames(sparcc.chi1$Cor) <- colnames(totu)
+colnames(sparcc.chi1$Cor) <- colnames(totu)
+rownames(sparcc.chi1$Cov) <- colnames(totu)
+colnames(sparcc.chi1$Cov) <- colnames(totu)
+#look to confirm
+sparcc.chi1$Cor[1:5, 1:5]
+
+#Plotting SparCC correlation
+#first generate helper function to get upper triangle of the correlation matrix
+get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+}
+
+#helper function to reorder matrix (?)
+reorder_cormat <- function(cormat){
+# Use correlation between variables as distance
+dd <- as.dist((1-cormat)/2)
+hc <- hclust(dd)
+cormat <-cormat[hc$order, hc$order]
+}
+
+#calculate sparcc p values
+#first have to boostrap the sparccc value
+set.seed(1234)
+tp0 <- proc.time()
+out2 <- sparccboot(totu, R = 1000)
+tp1 <- proc.time()
+tp1 - tp0
+
+#calculate p values from the bootstrapped values
+outP <- pval.sparccboot(out2)
+data.frame(outP$cors, outP$pvals) %>% head
+
+#these values are hard to use because they don’t tell you which p-values correspond to which species; source to fix: https://github.com/zdk123/SpiecEasi/issues/17
+
+cors <- outP$cors
+pvals <- outP$pvals
+sparCCpcors <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
+sparCCpcors[upper.tri(sparCCpcors, diag=FALSE)] <- cors
+sparCCpcors <- sparCCpcors + t(sparCCpcors)
+
+sparCCpval <- diag(0.5, nrow = dim(sparcc.chi1$Cor)[1], ncol = dim(sparcc.chi1$Cor)[1])
+sparCCpval[upper.tri(sparCCpval, diag=FALSE)] <- pvals
+sparCCpval <- sparCCpval + t(sparCCpval)
+
+rownames(sparCCpcors) <- colnames(totu)
+colnames(sparCCpcors) <- colnames(totu)
+rownames(sparCCpval) <- colnames(totu)
+colnames(sparCCpval) <- colnames(totu)
+
+sparCCpcors[1:5, 1:5]
+sparCCpval[1:5, 1:5]
+
+#now need to process and account for false discovery rates 
+#add helper function first
+reorder_cor_and_p <- function(cormat, pmat){
+  dd <- as.dist((1-cormat)/2)
+  hc <- hclust(dd)
+  cormat <-cormat[hc$order, hc$order]
+  pmat <- pmat[hc$order, hc$order]
+  list(r = cormat, p = pmat)
+}
+
+reordered_all_sparcc <- reorder_cor_and_p(sparCCpcors, sparCCpval)
+reordered_sparccCor <- reordered_all_sparcc$r
+reordered_sparccP<- reordered_all_sparcc$p
+
+sparccCor_processed <- reordered_sparccCor  %>% get_upper_tri() %>% reshape2::melt() %>% na.omit() %>% rename(cor = value)
+sparccP_processed <- reordered_sparccP  %>% get_upper_tri() %>% reshape2::melt() %>% na.omit() %>% rename(p = value)
+
+# join the two data frames
+set.seed(1234)
+SparccP <- left_join(sparccCor_processed, sparccP_processed, by = c("Var1", "Var2")) %>%
+  # # remove self correlations
+  # filter(Var1 != Var2) %>% 
+  # calculate the false discovery rate to adjust for multiple p values
+  mutate(fdr = p.adjust(p, method = "BH"))
+
+#now save as a csv:
+write.csv(SparccP, "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/SparCC_June2024_setseed_halfV2.csv")
+
+#comparing csv files: the cor and p values are identical, but the fdr values are different, so we will REDO everything and add a set.seed above the fdr code
+
+#the below code is our troubleshooting to get the species in alphabetical order; can disregard as we resolved it by converting Var1 and Var2 from factors --> character variables
 
 png(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/sparcc_fullV1.png",
     width = 12, height = 9, units = 'in', res = 600)
