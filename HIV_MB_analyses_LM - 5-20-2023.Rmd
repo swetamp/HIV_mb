@@ -691,7 +691,7 @@ remove(bloop)
 
 #Now ordinate and create PCOA plot
 clr_pcoa <- ordinate(chi_clr, method = "PCoA", distance = "euclidean")
-p1 <- plot_ordination(chi_clr, clr_pcoa, color = "hiv2") +
+p1a <- plot_ordination(chi_clr, clr_pcoa, color = "hiv2") +
   geom_point(size = 0.005) + theme_classic() + theme(
     plot.title = element_text(size = 14, hjust = 0.5),
     legend.title = element_blank(),
@@ -705,7 +705,16 @@ p1 <- plot_ordination(chi_clr, clr_pcoa, color = "hiv2") +
   xlab("PC1 (14.4%)") + ylab("PC2 (8.9%)") +
   scale_linetype_manual(values= c("dashed", "dashed", "dashed"))
 
+p1a
+
+###UPDATE JUNE 2025: JID Reviewer asked for p values on the figure so we are regenerating each panel so we can add the P values to our PCOA plots
+#will use annotate package in R; source: https://ggplot2.tidyverse.org/reference/annotate.html
+#will match our font size to the axis TEXT font size (10); how to do this: https://stackoverflow.com/questions/65076492/ggplot-size-of-annotate-vs-size-of-element-text
+
+p1 <- p1a + annotate("text", x = 35, y = -30, label = "p = 0.043", size = 10/.pt)
+
 p1
+
 ```
 
 #### Permanova
@@ -4774,4 +4783,20 @@ prop.table(table(spneum$present, spneum$hiv), 2)
 summary(table(spneum$present, spneum$hiv))  #Trend towards higher %HEU kids with S.pneumo col (96% vs 82% in HIV+ and 86% in HUU) but not signif; p=0.094
 
 
+```
+
+### Final Lancet Microbe comments
+- April 2025 update for JID previously reviewed papers pathway submission
+- reviewer concerned about our sequencing depth and level of host contamination, so we can gather some data from the kneaddata_counts csv file MK generated when running pipeline on the initial sequencing run 
+
+```{r}
+kneaddata <- read.csv("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Sequencing/HIV_NGS_kneaddata_counts.csv")
+summary(kneaddata$raw.pair1)
+
+#create variable that is trimmed reads - final reads; is this a rough approximation of the #reads removed by bowtie2? Will check with MK
+kneaddata$hum <- (kneaddata$trimmed.pair1 - kneaddata$final.pair1)
+kneaddata$ratio <- (kneaddata$final.pair1/kneaddata$hum)
+summary(kneaddata$ratio)
+kneaddata$ratio2 <- (kneaddata$final.pair1/kneaddata$trimmed.pair1)
+summary(kneaddata$ratio2)
 ```
