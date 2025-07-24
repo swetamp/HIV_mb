@@ -1009,7 +1009,16 @@ fig3 <- plot_grid(m_s, right,
                   rel_heights = c(1, 1.2))
                   # align = "v", axis = "b")
 
-ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4NEW(maaslin)_May2024.pdf", plot = fig3, dpi = 300, width = 12, height = 5)
+#UPDATE JULY 2025: JID does not accept pdf files, so will save as eps --> apparently latest OS does not support opening eps files, so will save as a TIFF
+#ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4NEW(maaslin)_May2024.pdf", plot = fig3, dpi = 300, width = 12, height = 5)
+
+#ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4NEW(maaslin)_July2025.eps", width = 12, height = 5, units = "in")
+# fig3
+# dev.off()
+
+ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4NEW(maaslin)_July2025.tiff", width = 12, height = 5, units = "in", device='tiff', dpi=700)
+fig3
+dev.off()
 ```
 
 ### K-medioid clustering
@@ -3727,8 +3736,15 @@ clr_cd4 <- plot_ordination(cd4_clr, clr_pcoa, color = "cd4cat") +
 # png(file="clr_cd4nl.png",
 #     width = 6, height = 4, units = 'in', res=600)
 clr_cd4
-p3 <- clr_cd4
+###UPDATE JUNE 2025 with reviewer requested annotation
+p3 <- clr_cd4 + annotate("text", x = 26, y = -30, label = "p = 0.013", size = 10/.pt)
+
 p3
+
+#does our p value text placement line up for both figures? will generate a test figure to check and then delete
+test <- plot_grid(p1, p3, labels = "AUTO", nrow = 2, ncol = 1, align = "h", axis = "b")
+test
+ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/test_annotatedpcoa.pdf", plot = test, dpi = 300, height = 9, width = 8)
 # dev.off()
 
 #TMP-SMX use
@@ -3899,14 +3915,11 @@ test2$cd4cat <- reorder(test2$cd4cat, new.order=c("Low CD4", "Normal CD4"))
 # test2$Species <- factor(test2$Species)
 # test2$Species <- reorder(test2$Species, new.order=c("Corynebacterium accolens","Corynebacterium propinquum", "Corynebacterium pseudodiphtheriticum", "Dolosigranulum pigrum", "Haemophilus influenzae", "Moraxella catarrhalis", "Moraxella lincolnii",  "Moraxella nonliquefaciens", "Staphylococcus aureus", "Streptococcus pneumoniae", "Other"))
 
-subject_plot_cd4_2 <- ggplot(test2[order(test2$Species, decreasing = TRUE),], aes(x=cd4cat, y=subject_abundances, fill=Species)) + geom_bar(stat="identity", position="fill") + theme_classic() + theme(legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2) 
-
-# labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) +
-  # ylab("Mean relative abundance"
+subject_plot_cd4_2 <- ggplot(test2[order(test2$Species, decreasing = TRUE),], aes(x=cd4cat, y=subject_abundances, fill=Species)) + geom_bar(stat="identity", position="fill") + theme_classic() + theme(legend.position="right", legend.text=element_markdown(), axis.title.y = element_text(size=12, margin=margin(0,20,0,0)), axis.text.y = element_text(size=10), axis.title.x = element_blank(), axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust = 1, colour = "black")) + scale_fill_manual(values = chisp2, labels = c("*Corynebacterium accolens*", "*Corynebacterium propinquum*", "*Corynebacterium pseudodiphtheriticum*", "*Dolosigranulum pigrum*", "*Haemophilus influenzae*", "*Moraxella catarrhalis*", "*Moraxella lincolnii*", "*Moraxella nonliquefaciens*",  "*Staphylococcus aureus*", "*Streptococcus pneumoniae*", "Other")) + ylab("Mean relative abundance")
 
 p4 <- plot(subject_plot_cd4_2)
 
-
+p4
 
 #############
 #DELETE BELOW
@@ -4011,11 +4024,22 @@ p4 <- plot(subject_plot_cd4_2)
 #NOW: combine all using patchwork vs cowplot (great ref: https://wilkelab.org/cowplot/articles/aligning_plots.html)
 #For future reference: p1 and p2 code is in Fog Kaiju 5-26-22.R file, p3 and p4 are here
 #After MK feedback, removed x axis titles for B and D, only capitalized "Mean" in y axis titles for B&D, and increased width of A&C (so ratio from 1, 1.65 to 1, 1.55)
+
 fig2 <- plot_grid(p1, p2, p3, p4, labels = "AUTO", nrow = 2, ncol = 2, align = "h", axis = "b", rel_widths = c(1,1.3))
 
 fig2
 
-ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig1NEW_V2.pdf", plot = fig2, dpi = 300, height = 9, width = 11)
+# ggsave("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2_annotated_JID062025.pdf", plot = fig2, dpi = 300, height = 9, width = 11)
+
+# ggsave(file="/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2_JID.tiff", width = 11, height = 9, units = "in", device='tiff', dpi=300)
+# fig2
+# dev.off()
+#still giving artifact, which is weird, at both dpi=300 and dpi=700
+
+#Saving as TIFF for JID 2025:
+tiff("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2_JID.tiff", width = 11, height = 9, units = "in", res = 600, compression = "lzw")
+fig2
+dev.off()
 
 ```
 
@@ -4799,4 +4823,31 @@ kneaddata$ratio <- (kneaddata$final.pair1/kneaddata$hum)
 summary(kneaddata$ratio)
 kneaddata$ratio2 <- (kneaddata$final.pair1/kneaddata$trimmed.pair1)
 summary(kneaddata$ratio2)
+```
+
+### Final JID comments
+
+- Our paper was provisionally accepted to JID (woo!) but we need to submit our figures as .eps or .tiff files, not PDF (which unfortunately is not stated in the image guidance for authors document: https://static.primary.prod.gcms.the-infra.com/static/site/journals/document/images-author-guidance.pdf?node=1bf05d0b2fbd9c529a23&version=490455:30c2211aa70bba63a5ee)
+
+- per ChatGPT, will attempt to use magick package in R to convert Figure 2, figure 3, and figure 5. It was straightforward to regenerate fig 1 (enrollment diagram) and fig 4 (maaslin output, done in the maaslin barplot section above), but since we need to set.seed, etc for the code that generated figs 2/3/5 I don't want to run into reproducibility or coding problems.
+
+```{r}
+library(magick)
+library(pdftools)
+fig2 <- image_read_pdf("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2_annotated_JID062025.pdf", density = 300)
+
+image_write(fig2, path = "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig2_JID.tiff", format = "tiff")
+
+#THERE IS ARTIFACT even when we lower our dpi from 600 to 300; so we will recreate Fig2 in R and be very mindful to set.seed, etc
+
+#what about fig 3? SUCCESS!
+clust <- image_read_pdf("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig3NEW(clust)_V3.pdf", density = 600)
+
+image_write(clust, path = "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig3_JID.tiff", format = "tiff")
+
+#fig 5
+fig5 <- image_read_pdf("/Users/swetapatel/OneDrive - Duke University/Fogarty coding/Fig4SparCC_June24_FULL_setseedV3 annotated.pdf", density = 600)
+
+image_write(fig5, path = "/Users/swetapatel/OneDrive - Duke University/Fogarty coding/fig5_JID.tiff", format = "tiff")
+
 ```
